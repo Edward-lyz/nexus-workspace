@@ -10,7 +10,18 @@ on:
 
 jobs:
   build:
-    runs-on: macos-14  # Apple Silicon runner
+    strategy:
+      matrix:
+        include:
+          - os: macos-13
+            arch: x86_64
+            name: Intel
+          - os: macos-14
+            arch: aarch64
+            name: AppleSilicon
+
+    runs-on: ${{ matrix.os }}
+    name: Build (${{ matrix.name }})
 
     steps:
       - uses: actions/checkout@v4
@@ -42,7 +53,6 @@ jobs:
           cp zig-out/bin/cove Nexus.app/Contents/MacOS/nexus
           cp -r frontend/dist/* Nexus.app/Contents/Resources/static/
 
-          # Create Info.plist
           cat > Nexus.app/Contents/Info.plist << 'EOF'
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -103,20 +113,20 @@ jobs:
           mkdir -p /tmp/dmg
           cp -r Nexus.app /tmp/dmg/
           ln -s /Applications /tmp/dmg/Applications
-          hdiutil create -volname "Nexus" -srcfolder /tmp/dmg -ov -format UDZO Nexus.dmg
+          hdiutil create -volname "Nexus" -srcfolder /tmp/dmg -ov -format UDZO Nexus-${{ matrix.arch }}.dmg
 
       - name: Upload App Bundle
         uses: actions/upload-artifact@v4
         with:
-          name: Nexus-macOS
+          name: Nexus-${{ matrix.arch }}
           path: Nexus.app
           retention-days: 30
 
       - name: Upload DMG
         uses: actions/upload-artifact@v4
         with:
-          name: Nexus-DMG
-          path: Nexus.dmg
+          name: Nexus-DMG-${{ matrix.arch }}
+          path: Nexus-${{ matrix.arch }}.dmg
           retention-days: 30
 
   release:
@@ -125,15 +135,22 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
 
     steps:
-      - name: Download artifacts
+      - name: Download Intel DMG
         uses: actions/download-artifact@v4
         with:
-          name: Nexus-DMG
+          name: Nexus-DMG-x86_64
+
+      - name: Download Apple Silicon DMG
+        uses: actions/download-artifact@v4
+        with:
+          name: Nexus-DMG-aarch64
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
-          files: Nexus.dmg
+          files: |
+            Nexus-x86_64.dmg
+            Nexus-aarch64.dmg
           draft: false
           prerelease: false
           generate_release_notes: true
