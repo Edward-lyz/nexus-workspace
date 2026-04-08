@@ -28,8 +28,8 @@ jobs:
 
       - name: Setup Zig
         run: |
-          # Fetch latest master/dev build URL from official index
-          ZIG_URL=$(curl -s https://ziglang.org/download/index.json | python3 -c "import sys,json; print(json.load(sys.stdin)['master']['${{ matrix.arch }}-macos']['tarball'])")
+          # Use Zig 0.15.2 stable (matches minimum_zig_version in build.zig.zon)
+          ZIG_URL=$(curl -s https://ziglang.org/download/index.json | python3 -c "import sys,json; print(json.load(sys.stdin)['0.15.2']['${{ matrix.arch }}-macos']['tarball'])")
           echo "Downloading: $ZIG_URL"
           curl -L "$ZIG_URL" | tar -xJ
           ZIG_DIR=$(ls -d zig-* | head -1)
