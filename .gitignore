@@ -1,0 +1,23 @@
+# Build outputs
+zig-out/
+.zig-cache/
+
+# macOS App bundle (generated)
+Nexus.app/
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+
+# IDE / System
+.DS_Store
+.vscode/
+*.swp
+*~
+
+# Claude Code metadata
+.baidu-cc/
+
+# Environment
+.env
+.env.*

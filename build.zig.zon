@@ -1,0 +1,13 @@
+.{
+    .name = .cove,
+    .version = "0.2.0",
+    .minimum_zig_version = "0.15.2",
+    .fingerprint = 0xfe1404bc600c7ca,
+    .paths = .{""},
+    .dependencies = .{
+        .webview = .{
+            .url = "git+https://github.com/happystraw/zig-webview#0a28ede4e27b5d4fc98710416dad67319c70cda3",
+            .hash = "webview-0.0.0-mgPxHGJPKQDVwU1cdzzWiQKgqVd7Rom5kAA2cXruT6Jj",
+        },
+    },
+}

@@ -1,0 +1,205 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   NEXUS DESIGN SYSTEM — "Liquid Terminal"
+   Neo-utilitarian aesthetic: Bloomberg density × Liquid Glass fluidity
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+@import url('https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500;600;700&family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,400&display=swap');
+
+:root {
+  /* ─────────────────────────────────────────────────────────────────────────
+     SCALE & RHYTHM
+     ───────────────────────────────────────────────────────────────────────── */
+  --nx-scale: 1;
+  --nx-space-unit: 4px;
+  --nx-space-1: calc(var(--nx-space-unit) * 1);  /* 4px */
+  --nx-space-2: calc(var(--nx-space-unit) * 2);  /* 8px */
+  --nx-space-3: calc(var(--nx-space-unit) * 3);  /* 12px */
+  --nx-space-4: calc(var(--nx-space-unit) * 4);  /* 16px */
+  --nx-space-5: calc(var(--nx-space-unit) * 5);  /* 20px */
+  --nx-space-6: calc(var(--nx-space-unit) * 6);  /* 24px */
+  --nx-space-8: calc(var(--nx-space-unit) * 8);  /* 32px */
+
+  /* ─────────────────────────────────────────────────────────────────────────
+     TYPOGRAPHY
+     Geist Mono: geometric precision for UI
+     DM Sans: warm humanist for body text
+     ───────────────────────────────────────────────────────────────────────── */
+  --nx-font-mono: 'Geist Mono', 'SF Mono', 'Cascadia Code', monospace;
+  --nx-font-sans: 'DM Sans', system-ui, sans-serif;
+
+  --nx-text-xs: calc(11px * var(--nx-scale));
+  --nx-text-sm: calc(12px * var(--nx-scale));
+  --nx-text-base: calc(13px * var(--nx-scale));
+  --nx-text-md: calc(14px * var(--nx-scale));
+  --nx-text-lg: calc(16px * var(--nx-scale));
+  --nx-text-xl: calc(20px * var(--nx-scale));
+  --nx-text-2xl: calc(24px * var(--nx-scale));
+
+  --nx-leading-tight: 1.25;
+  --nx-leading-normal: 1.5;
+  --nx-leading-relaxed: 1.65;
+
+  --nx-tracking-tight: -0.02em;
+  --nx-tracking-normal: 0;
+  --nx-tracking-wide: 0.04em;
+  --nx-tracking-caps: 0.1em;
+
+  /* ─────────────────────────────────────────────────────────────────────────
+     DARK THEME — "Deep Ocean"
+     Layered depths with cyan luminescence
+     ───────────────────────────────────────────────────────────────────────── */
+
+  /* Core palette */
+  --nx-ink: #0a0d12;
+  --nx-ink-raised: #0f1318;
+  --nx-ink-elevated: #141a21;
+  --nx-ink-float: #1a222b;
+
+  /* Accent: Cyan pulse */
+  --nx-accent: #22d3ee;
+  --nx-accent-dim: #0891b2;
+  --nx-accent-glow: rgba(34, 211, 238, 0.15);
+  --nx-accent-subtle: rgba(34, 211, 238, 0.08);
+
+  /* Semantic */
+  --nx-success: #4ade80;
+  --nx-warning: #fbbf24;
+  --nx-error: #f87171;
+  --nx-info: #60a5fa;
+
+  /* Text hierarchy */
+  --nx-text-primary: rgba(255, 255, 255, 0.95);
+  --nx-text-secondary: rgba(255, 255, 255, 0.65);
+  --nx-text-tertiary: rgba(255, 255, 255, 0.4);
+  --nx-text-ghost: rgba(255, 255, 255, 0.2);
+
+  /* Borders & Lines */
+  --nx-border: rgba(255, 255, 255, 0.08);
+  --nx-border-subtle: rgba(255, 255, 255, 0.04);
+  --nx-border-strong: rgba(255, 255, 255, 0.15);
+  --nx-border-focus: var(--nx-accent);
+
+  /* Surfaces */
+  --nx-surface: rgba(15, 19, 24, 0.85);
+  --nx-surface-hover: rgba(255, 255, 255, 0.04);
+  --nx-surface-active: rgba(255, 255, 255, 0.08);
+  --nx-surface-selected: rgba(34, 211, 238, 0.12);
+
+  /* Glass effect */
+  --nx-glass-bg: rgba(10, 13, 18, 0.75);
+  --nx-glass-border: rgba(255, 255, 255, 0.06);
+  --nx-glass-blur: 24px;
+  --nx-glass-saturate: 180%;
+
+  /* Shadows - layered depth */
+  --nx-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --nx-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.5), 0 1px 3px rgba(0, 0, 0, 0.3);
+  --nx-shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.6), 0 2px 8px rgba(0, 0, 0, 0.4);
+  --nx-shadow-glow: 0 0 20px var(--nx-accent-glow), 0 0 40px var(--nx-accent-glow);
+  --nx-shadow-inner: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+
+  /* Terminal */
+  --nx-terminal-bg: #080b0f;
+  --nx-terminal-fg: #e2e8f0;
+  --nx-terminal-cursor: var(--nx-accent);
+  --nx-terminal-selection: rgba(34, 211, 238, 0.25);
+
+  /* Layout */
+  --nx-radius-sm: 6px;
+  --nx-radius-md: 10px;
+  --nx-radius-lg: 14px;
+  --nx-radius-xl: 20px;
+
+  --nx-sidebar-w: 260px;
+  --nx-header-h: 38px;
+  --nx-statusbar-h: 28px;
+  --nx-gap: 2px;
+
+  /* Transitions */
+  --nx-transition-fast: 120ms ease-out;
+  --nx-transition-base: 200ms ease-out;
+  --nx-transition-slow: 350ms cubic-bezier(0.4, 0, 0.2, 1);
+  --nx-spring: 500ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   LIGHT THEME — "Paper Terminal"
+   Warm cream with ink accents
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+[data-theme="light"] {
+  /* Core palette - warm paper */
+  --nx-ink: #faf9f7;
+  --nx-ink-raised: #f5f3f0;
+  --nx-ink-elevated: #efece8;
+  --nx-ink-float: #ffffff;
+
+  /* Accent: Deep teal */
+  --nx-accent: #0d9488;
+  --nx-accent-dim: #0f766e;
+  --nx-accent-glow: rgba(13, 148, 136, 0.12);
+  --nx-accent-subtle: rgba(13, 148, 136, 0.06);
+
+  /* Semantic */
+  --nx-success: #16a34a;
+  --nx-warning: #d97706;
+  --nx-error: #dc2626;
+  --nx-info: #2563eb;
+
+  /* Text hierarchy */
+  --nx-text-primary: rgba(0, 0, 0, 0.9);
+  --nx-text-secondary: rgba(0, 0, 0, 0.6);
+  --nx-text-tertiary: rgba(0, 0, 0, 0.4);
+  --nx-text-ghost: rgba(0, 0, 0, 0.15);
+
+  /* Borders */
+  --nx-border: rgba(0, 0, 0, 0.08);
+  --nx-border-subtle: rgba(0, 0, 0, 0.04);
+  --nx-border-strong: rgba(0, 0, 0, 0.15);
+
+  /* Surfaces */
+  --nx-surface: rgba(255, 255, 255, 0.9);
+  --nx-surface-hover: rgba(0, 0, 0, 0.03);
+  --nx-surface-active: rgba(0, 0, 0, 0.06);
+  --nx-surface-selected: rgba(13, 148, 136, 0.1);
+
+  /* Glass */
+  --nx-glass-bg: rgba(255, 255, 255, 0.8);
+  --nx-glass-border: rgba(0, 0, 0, 0.06);
+
+  /* Shadows */
+  --nx-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.06);
+  --nx-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08), 0 1px 3px rgba(0, 0, 0, 0.04);
+  --nx-shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.1), 0 2px 8px rgba(0, 0, 0, 0.06);
+  --nx-shadow-inner: inset 0 1px 0 rgba(255, 255, 255, 0.5);
+
+  /* Terminal */
+  --nx-terminal-bg: #1e1e1e;
+  --nx-terminal-fg: #d4d4d4;
+}
+
+/* Legacy variable mapping for compatibility */
+:root {
+  --cove-ui-font-scale: var(--nx-scale);
+  --cove-font-mono: var(--nx-font-mono);
+  --cove-font-ui: var(--nx-font-sans);
+  --cove-accent: var(--nx-accent);
+  --cove-text: var(--nx-text-primary);
+  --cove-text-muted: var(--nx-text-secondary);
+  --cove-text-faint: var(--nx-text-tertiary);
+  --cove-border: var(--nx-border);
+  --cove-border-subtle: var(--nx-border-subtle);
+  --cove-border-focus: var(--nx-border-focus);
+  --cove-surface: var(--nx-surface);
+  --cove-surface-hover: var(--nx-surface-hover);
+  --cove-field: var(--nx-surface-hover);
+  --cove-radius: var(--nx-radius-lg);
+  --cove-radius-sm: var(--nx-radius-md);
+  --cove-sidebar-w: var(--nx-sidebar-w);
+  --cove-gap: var(--nx-gap);
+  --cove-success: var(--nx-success);
+  --cove-warning: var(--nx-warning);
+  --cove-error: var(--nx-error);
+  --cove-terminal-bg: var(--nx-terminal-bg);
+  --cove-terminal-fg: var(--nx-terminal-fg);
+}
