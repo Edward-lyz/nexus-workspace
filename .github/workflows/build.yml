@@ -28,11 +28,12 @@ jobs:
 
       - name: Setup Zig
         run: |
-          # Fetch latest master/dev build index
-          ZIG_VERSION=$(curl -s https://ziglang.org/download/index.json | python3 -c "import sys,json; print(json.load(sys.stdin)['master']['version'])")
-          echo "Using Zig version: $ZIG_VERSION"
-          curl -L "https://ziglang.org/builds/zig-macos-${{ matrix.arch }}-${ZIG_VERSION}.tar.xz" | tar -xJ
-          echo "$PWD/zig-macos-${{ matrix.arch }}-${ZIG_VERSION}" >> $GITHUB_PATH
+          # Fetch latest master/dev build URL from official index
+          ZIG_URL=$(curl -s https://ziglang.org/download/index.json | python3 -c "import sys,json; print(json.load(sys.stdin)['master']['${{ matrix.arch }}-macos']['tarball'])")
+          echo "Downloading: $ZIG_URL"
+          curl -L "$ZIG_URL" | tar -xJ
+          ZIG_DIR=$(ls -d zig-* | head -1)
+          echo "$PWD/$ZIG_DIR" >> $GITHUB_PATH
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
