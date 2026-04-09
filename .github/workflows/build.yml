@@ -133,10 +133,68 @@ jobs:
           path: Nexus-${{ matrix.arch }}.dmg
           retention-days: 30
 
+  nightly:
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download Intel DMG
+        uses: actions/download-artifact@v4
+        with:
+          name: Nexus-DMG-x86_64
+
+      - name: Download Apple Silicon DMG
+        uses: actions/download-artifact@v4
+        with:
+          name: Nexus-DMG-aarch64
+
+      - name: Generate nightly tag
+        id: tag
+        run: |
+          TAG="nightly-$(date -u +%Y%m%d)-${GITHUB_SHA::7}"
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "Generated tag: $TAG"
+
+      - name: Rename DMGs with nightly tag
+        run: |
+          mv Nexus-x86_64.dmg Nexus-${{ steps.tag.outputs.tag }}-x86_64.dmg
+          mv Nexus-aarch64.dmg Nexus-${{ steps.tag.outputs.tag }}-aarch64.dmg
+
+      - name: Delete old nightly releases
+        uses: dev-drprasad/delete-older-releases@v0.3.4
+        with:
+          keep_latest: 5
+          delete_tag_pattern: nightly-
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create Nightly Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: Nightly ${{ steps.tag.outputs.tag }}
+          body: |
+            Automated nightly build from commit ${{ github.sha }}
+
+            **Commit**: [`${{ github.sha }}`](${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }})
+            **Build**: [#${{ github.run_number }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+          files: |
+            Nexus-${{ steps.tag.outputs.tag }}-x86_64.dmg
+            Nexus-${{ steps.tag.outputs.tag }}-aarch64.dmg
+          draft: false
+          prerelease: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   release:
     needs: build
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
 
     steps:
       - name: Download Intel DMG

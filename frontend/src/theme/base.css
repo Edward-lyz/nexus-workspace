@@ -233,8 +233,8 @@ html, body {
   width: 24px;
   height: 24px;
   border-radius: var(--nx-radius-sm);
-  border: 1px solid rgba(255, 255, 255, 0.05);
-  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--nx-border);
+  background: var(--nx-ink-elevated);
   color: var(--nx-text-tertiary);
   font-size: var(--nx-text-sm);
   cursor: pointer;
@@ -243,8 +243,6 @@ html, body {
   justify-content: center;
   opacity: 0;
   transition: all var(--nx-transition-fast);
-  backdrop-filter: blur(14px) saturate(150%);
-  -webkit-backdrop-filter: blur(14px) saturate(150%);
 }
 
 .pane:hover .btn-close,
@@ -269,8 +267,8 @@ html, body {
   width: 24px;
   height: 24px;
   border-radius: var(--nx-radius-sm);
-  border: 1px solid rgba(255, 255, 255, 0.05);
-  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--nx-border);
+  background: var(--nx-ink-elevated);
   color: var(--nx-text-tertiary);
   font-size: var(--nx-text-sm);
   cursor: pointer;
@@ -279,8 +277,6 @@ html, body {
   justify-content: center;
   opacity: 0;
   transition: all var(--nx-transition-fast);
-  backdrop-filter: blur(14px) saturate(150%);
-  -webkit-backdrop-filter: blur(14px) saturate(150%);
 }
 
 .pane:hover .btn-expand,
@@ -383,7 +379,7 @@ html, body {
 .task-pane {
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.03) 0%, transparent 36%),
-    linear-gradient(135deg, rgba(34, 211, 238, 0.06) 0%, transparent 55%),
+    linear-gradient(135deg, rgba(97, 175, 239, 0.08) 0%, transparent 55%),
     var(--nx-glass-bg);
 }
 
@@ -417,7 +413,7 @@ html, body {
   padding: 4px var(--nx-space-2);
   border-radius: var(--nx-radius-sm);
   border: 1px solid currentColor;
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--nx-surface-hover);
   cursor: pointer;
   transition: all var(--nx-transition-fast);
   opacity: 0.8;
@@ -459,22 +455,19 @@ html, body {
   width: 100%;
   padding: var(--nx-space-3);
   border-radius: var(--nx-radius-md);
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--nx-border-strong);
+  background: var(--nx-surface-hover);
   color: var(--nx-text-secondary);
   font-family: var(--nx-font-mono);
   font-size: var(--nx-text-sm);
   cursor: pointer;
   transition: all var(--nx-transition-base);
-  backdrop-filter: blur(18px) saturate(160%);
-  -webkit-backdrop-filter: blur(18px) saturate(160%);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
 
 .task-dispatch-btn:hover {
   border-color: var(--nx-accent);
   color: var(--nx-accent);
-  background: color-mix(in srgb, var(--nx-accent) 12%, rgba(255, 255, 255, 0.04));
+  background: var(--nx-accent-subtle);
 }
 
 .task-dispatch-options {
@@ -486,16 +479,14 @@ html, body {
 .task-agent-chip {
   padding: var(--nx-space-2) var(--nx-space-3);
   border-radius: var(--nx-radius-md);
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--nx-border);
+  background: var(--nx-surface-hover);
   color: var(--agent-color, var(--nx-text-secondary));
   font-family: var(--nx-font-mono);
   font-size: var(--nx-text-xs);
   font-weight: 500;
   cursor: pointer;
   transition: all var(--nx-transition-fast);
-  backdrop-filter: blur(14px) saturate(150%);
-  -webkit-backdrop-filter: blur(14px) saturate(150%);
 }
 
 .task-agent-chip:hover {
@@ -718,8 +709,8 @@ html, body {
   width: 28px;
   height: 28px;
   border-radius: var(--nx-radius-sm);
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--nx-border);
+  background: var(--nx-surface-hover);
   color: var(--nx-text-tertiary);
   font-family: var(--nx-font-mono);
   font-size: var(--nx-text-sm);
@@ -733,9 +724,9 @@ html, body {
 }
 
 .sidebar-icon-btn:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--nx-surface-active);
   color: var(--nx-text-primary);
-  border-color: rgba(255, 255, 255, 0.12);
+  border-color: var(--nx-border-strong);
 }
 
 .sidebar-icon-btn:active {
@@ -806,8 +797,8 @@ html, body {
 .sidebar-btn {
   padding: var(--nx-space-3) var(--nx-space-2);
   border-radius: var(--nx-radius-md);
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--nx-border-strong);
+  background: var(--nx-surface-hover);
   color: var(--nx-text-secondary);
   font-family: var(--nx-font-mono);
   font-size: var(--nx-text-xs);
@@ -821,9 +812,9 @@ html, body {
 }
 
 .sidebar-btn:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--nx-surface-active);
   color: var(--nx-text-primary);
-  border-color: rgba(255, 255, 255, 0.14);
+  border-color: var(--nx-border-strong);
   transform: translateY(-1px);
 }
 
@@ -1250,7 +1241,7 @@ html, body {
   font-weight: 500;
   text-transform: uppercase;
   letter-spacing: var(--nx-tracking-caps);
-  color: var(--nx-text-tertiary);
+  color: var(--nx-text-secondary);
   margin-bottom: var(--nx-space-2);
   margin-top: var(--nx-space-4);
 }
@@ -1280,7 +1271,7 @@ html, body {
 
 .dialog-input::placeholder,
 .dialog-textarea::placeholder {
-  color: var(--nx-text-ghost);
+  color: var(--nx-text-tertiary);
 }
 
 .dialog-textarea {
@@ -1308,10 +1299,10 @@ html, body {
   display: inline-flex;
   padding: var(--nx-space-2) var(--nx-space-3);
   border-radius: var(--nx-radius-md);
-  border: 1px solid var(--nx-border);
+  border: 1px solid var(--nx-border-strong);
   font-family: var(--nx-font-mono);
   font-size: var(--nx-text-xs);
-  color: var(--nx-text-secondary);
+  color: var(--nx-text-primary);
   transition: all var(--nx-transition-fast);
 }
 
@@ -1372,7 +1363,7 @@ html, body {
 .dialog-hint {
   font-family: var(--nx-font-mono);
   font-size: var(--nx-text-xs);
-  color: var(--nx-text-ghost);
+  color: var(--nx-text-tertiary);
 }
 
 .dialog-actions {
@@ -1775,7 +1766,7 @@ html, body {
   flex: 1;
   border-radius: var(--nx-radius-xl);
   border: 1px solid var(--nx-accent);
-  box-shadow: var(--nx-shadow-lg), 0 0 60px var(--nx-accent-glow), 0 0 120px rgba(34, 211, 238, 0.05);
+  box-shadow: var(--nx-shadow-lg), 0 0 60px var(--nx-accent-glow), 0 0 120px rgba(97, 175, 239, 0.08);
 }
 
 .expanded-content > .pane .pane-body {
@@ -2387,7 +2378,7 @@ html, body {
 
 .diff-line.diff-hunk {
   color: var(--nx-accent);
-  background: rgba(34, 211, 238, 0.05);
+  background: rgba(97, 175, 239, 0.08);
 }
 
 .diff-line.diff-add {
@@ -3263,7 +3254,7 @@ html, body {
 /* Liquid glass pulse on plan mode */
 @keyframes glass-pulse {
   0%, 100% { box-shadow: 0 0 0 1px var(--nx-accent), 0 0 20px var(--nx-accent-glow); }
-  50% { box-shadow: 0 0 0 2px var(--nx-accent), 0 0 40px var(--nx-accent-glow), 0 0 60px rgba(34, 211, 238, 0.08); }
+  50% { box-shadow: 0 0 0 2px var(--nx-accent), 0 0 40px var(--nx-accent-glow), 0 0 60px rgba(97, 175, 239, 0.1); }
 }
 
 .pane:has(.plan-mode-overlay) {
@@ -3313,3 +3304,78 @@ html, body {
 .status-dot-sm[data-status="todo"]  { background: var(--nx-text-ghost); }
 .status-dot-sm[data-status="doing"] { background: var(--nx-warning); box-shadow: 0 0 4px var(--nx-warning); }
 .status-dot-sm[data-status="done"]  { background: var(--nx-success); }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   LIGHT THEME OVERRIDES
+   Ensure proper contrast and readability in light mode
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+[data-theme="light"] .sidebar-icon-btn,
+[data-theme="light"] .sidebar-btn {
+  border-color: rgba(0, 0, 0, 0.08);
+  background: rgba(0, 0, 0, 0.02);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
+}
+
+[data-theme="light"] .sidebar-icon-btn:hover,
+[data-theme="light"] .sidebar-btn:hover {
+  background: rgba(0, 0, 0, 0.06);
+  border-color: rgba(0, 0, 0, 0.12);
+}
+
+[data-theme="light"] .pane-header .btn-close,
+[data-theme="light"] .btn-clone,
+[data-theme="light"] .btn-expand,
+[data-theme="light"] .btn-popout {
+  border-color: rgba(0, 0, 0, 0.08);
+  background: rgba(255, 255, 255, 0.8);
+}
+
+[data-theme="light"] .statusbar {
+  background:
+    linear-gradient(90deg, rgba(0, 0, 0, 0.02) 0%, transparent 48%, rgba(0, 0, 0, 0.02) 100%),
+    var(--nx-ink-raised);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5);
+}
+
+[data-theme="light"] .dialog-submit {
+  color: white;
+}
+
+[data-theme="light"] .pane-badge {
+  background: rgba(0, 0, 0, 0.06);
+}
+
+[data-theme="light"] .pane-badge.agent {
+  background: rgba(166, 38, 164, 0.1);
+  color: #a626a4;
+}
+
+[data-theme="light"] .pane-badge.shell {
+  background: rgba(80, 161, 79, 0.1);
+  color: #50a14f;
+}
+
+[data-theme="light"] .pane-badge.task {
+  background: rgba(64, 120, 242, 0.1);
+  color: #4078f2;
+}
+
+[data-theme="light"] .status-toggle {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+[data-theme="light"] .task-dispatch-btn {
+  border-color: rgba(0, 0, 0, 0.12);
+  background: rgba(0, 0, 0, 0.02);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
+}
+
+[data-theme="light"] .task-agent-chip {
+  border-color: rgba(0, 0, 0, 0.08);
+  background: rgba(0, 0, 0, 0.02);
+}
+
+[data-theme="light"] .clone-chip {
+  border-color: rgba(0, 0, 0, 0.12);
+}

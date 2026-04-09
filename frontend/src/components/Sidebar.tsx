@@ -1,4 +1,4 @@
-import { useState, useRef } from 'preact/hooks';
+import { useState, useRef, useEffect } from 'preact/hooks';
 import {
   spaces, activeSpaceId, activeSpacePanes, activeSpaceNotes,
   panes, archivedPanes, notes, focusPane, createSpace, deletePane, unarchivePane,
@@ -15,6 +15,33 @@ interface Props {
   onAddNote: (space: SpaceState) => void;
 }
 
+// Detect system theme and sync on mount and change
+function useSystemTheme() {
+  const getSystemTheme = () => window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  const [theme, setTheme] = useState<'dark' | 'light'>(getSystemTheme);
+
+  useEffect(() => {
+    const mq = window.matchMedia('(prefers-color-scheme: dark)');
+    const handler = (e: MediaQueryListEvent) => {
+      const newTheme = e.matches ? 'dark' : 'light';
+      setTheme(newTheme);
+      document.documentElement.setAttribute('data-theme', newTheme);
+    };
+    // Set initial theme
+    document.documentElement.setAttribute('data-theme', theme);
+    mq.addEventListener('change', handler);
+    return () => mq.removeEventListener('change', handler);
+  }, []);
+
+  const toggle = () => {
+    const newTheme = theme === 'dark' ? 'light' : 'dark';
+    setTheme(newTheme);
+    document.documentElement.setAttribute('data-theme', newTheme);
+  };
+
+  return { theme, isDark: theme === 'dark', toggle };
+}
+
 export function Sidebar({ onAddAgent, onAddTask, onAddNote }: Props) {
   const spacesVal = spaces.value;
   const activeId = activeSpaceId.value;
@@ -23,19 +50,13 @@ export function Sidebar({ onAddAgent, onAddTask, onAddNote }: Props) {
   const activeSpaceVal = spacesVal.find(s => s.id === activeId);
   const [newSpaceName, setNewSpaceName] = useState('');
   const [addingSpace, setAddingSpace] = useState(false);
-  const [isDark, setIsDark] = useState(true);
+  const { isDark, toggle: toggleTheme } = useSystemTheme();
   const [editingPath, setEditingPath] = useState(false);
   const [pathInput, setPathInput] = useState('');
   const importInputRef = useRef<HTMLInputElement>(null);
 
   const terminals = currentPanes.filter(p => (p.kind === 'shell' || p.kind === 'agent') && !p.embedded);
   const archivedForSpace = archivedPanes.value.filter((pane) => pane.spaceId === activeId);
-
-  function toggleTheme() {
-    const newTheme = isDark ? 'light' : 'dark';
-    document.documentElement.setAttribute('data-theme', newTheme);
-    setIsDark(!isDark);
-  }
 
   function commitNewSpace() {
     const name = newSpaceName.trim();

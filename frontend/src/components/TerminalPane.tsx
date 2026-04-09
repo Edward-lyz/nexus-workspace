@@ -8,32 +8,62 @@ import { PlanModeOverlay } from './PlanModeOverlay';
 import type { PaneState } from '../store';
 
 
-const TERMINAL_THEME = {
-  // Nexus "Deep Ocean" terminal palette
-  background: '#080b0f',
-  foreground: '#e2e8f0',
-  cursor: '#22d3ee',
-  cursorAccent: '#080b0f',
-  selectionBackground: 'rgba(34, 211, 238, 0.25)',
+// One Dark theme
+const THEME_ONE_DARK = {
+  background: '#282c34',
+  foreground: '#abb2bf',
+  cursor: '#528bff',
+  cursorAccent: '#282c34',
+  selectionBackground: 'rgba(82, 139, 255, 0.3)',
   selectionForeground: '#ffffff',
-  // ANSI colors - balanced vibrancy
-  black: '#334155',
-  red: '#f87171',
-  green: '#4ade80',
-  yellow: '#fbbf24',
-  blue: '#60a5fa',
-  magenta: '#c084fc',
-  cyan: '#22d3ee',
-  white: '#e2e8f0',
-  brightBlack: '#64748b',
-  brightRed: '#fca5a5',
-  brightGreen: '#86efac',
-  brightYellow: '#fde047',
-  brightBlue: '#93c5fd',
-  brightMagenta: '#d8b4fe',
-  brightCyan: '#67e8f9',
-  brightWhite: '#f8fafc',
+  black: '#3f4451',
+  red: '#e06c75',
+  green: '#98c379',
+  yellow: '#e5c07b',
+  blue: '#61afef',
+  magenta: '#c678dd',
+  cyan: '#56b6c2',
+  white: '#abb2bf',
+  brightBlack: '#5c6370',
+  brightRed: '#e06c75',
+  brightGreen: '#98c379',
+  brightYellow: '#e5c07b',
+  brightBlue: '#61afef',
+  brightMagenta: '#c678dd',
+  brightCyan: '#56b6c2',
+  brightWhite: '#ffffff',
 };
+
+// One Light theme
+const THEME_ONE_LIGHT = {
+  background: '#fafafa',
+  foreground: '#383a42',
+  cursor: '#526fff',
+  cursorAccent: '#fafafa',
+  selectionBackground: 'rgba(82, 111, 255, 0.2)',
+  selectionForeground: '#000000',
+  black: '#383a42',
+  red: '#e45649',
+  green: '#50a14f',
+  yellow: '#c18401',
+  blue: '#4078f2',
+  magenta: '#a626a4',
+  cyan: '#0184bc',
+  white: '#a0a1a7',
+  brightBlack: '#696c77',
+  brightRed: '#e45649',
+  brightGreen: '#50a14f',
+  brightYellow: '#c18401',
+  brightBlue: '#4078f2',
+  brightMagenta: '#a626a4',
+  brightCyan: '#0184bc',
+  brightWhite: '#fafafa',
+};
+
+function getTerminalTheme() {
+  const isDark = document.documentElement.getAttribute('data-theme') !== 'light';
+  return isDark ? THEME_ONE_DARK : THEME_ONE_LIGHT;
+}
 
 // Global registry so PTY data handler can find terminals by sessionId
 export const terminalRegistry = new Map<string, Terminal>();
@@ -70,7 +100,7 @@ export function TerminalPane({ pane }: Props) {
     if (!container) return;
 
     const terminal = new Terminal({
-      theme: TERMINAL_THEME,
+      theme: getTerminalTheme(),
       fontFamily: "'Geist Mono', 'SF Mono', 'Cascadia Code', monospace",
       fontSize: 13,
       lineHeight: 1.4,
@@ -122,7 +152,18 @@ export function TerminalPane({ pane }: Props) {
     });
     resizeObserver.observe(container);
 
+    // Listen for theme changes and update terminal
+    const themeObserver = new MutationObserver((mutations) => {
+      for (const mutation of mutations) {
+        if (mutation.attributeName === 'data-theme') {
+          terminal.options.theme = getTerminalTheme();
+        }
+      }
+    });
+    themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+
     return () => {
+      themeObserver.disconnect();
       resizeObserver.disconnect();
       if (pane.sessionId) {
         terminalSnapshotRegistry.set(pane.sessionId, serializeAddon.serialize());

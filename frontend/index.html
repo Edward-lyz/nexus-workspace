@@ -4,6 +4,11 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Nexus</title>
+  <script>
+    // Detect system theme and set data-theme before CSS loads to prevent flash
+    const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
+  </script>
   <link rel="stylesheet" href="src/theme/tokens.css">
   <link rel="stylesheet" href="src/theme/base.css">
   <link rel="stylesheet" href="src/theme/liquid-glass.css">

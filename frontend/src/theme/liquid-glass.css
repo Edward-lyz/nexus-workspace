@@ -235,7 +235,7 @@
 .task-dispatch-btn:hover {
   border-color: var(--nx-accent);
   color: var(--nx-accent);
-  background: rgba(34, 211, 238, 0.05);
+  background: rgba(97, 175, 239, 0.08);
 }
 
 .task-agent-chip {
@@ -297,7 +297,7 @@
 
 .cwd-preset:hover {
   color: var(--nx-accent);
-  background: rgba(34, 211, 238, 0.08);
+  background: rgba(97, 175, 239, 0.1);
 }
 
 /* ─────────────────────────────────────────────────────────────────────────
@@ -386,7 +386,7 @@
 }
 
 [data-theme="light"] .task-dispatch-btn:hover {
-  background: rgba(13, 148, 136, 0.05);
+  background: rgba(64, 120, 242, 0.08);
 }
 
 [data-theme="light"] .liquid-toggle {

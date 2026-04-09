@@ -45,70 +45,65 @@
   --nx-tracking-caps: 0.1em;
 
   /* ─────────────────────────────────────────────────────────────────────────
-     DARK THEME — "Deep Ocean"
-     Layered depths with cyan luminescence
+     DARK THEME — "One Dark"
+     Consistent with terminal, high readability
      ───────────────────────────────────────────────────────────────────────── */
 
-  /* Core palette */
-  --nx-ink: #0a0d12;
-  --nx-ink-raised: #0f1318;
-  --nx-ink-elevated: #141a21;
-  --nx-ink-float: #1a222b;
+  /* Core palette - One Dark based */
+  --nx-ink: #21252b;
+  --nx-ink-raised: #282c34;
+  --nx-ink-elevated: #2c323c;
+  --nx-ink-float: #333842;
 
-  /* Accent: Cyan pulse */
-  --nx-accent: #22d3ee;
-  --nx-accent-dim: #0891b2;
-  --nx-accent-glow: rgba(34, 211, 238, 0.15);
-  --nx-accent-subtle: rgba(34, 211, 238, 0.08);
+  /* Accent: One Dark blue */
+  --nx-accent: #61afef;
+  --nx-accent-dim: #528bff;
+  --nx-accent-glow: rgba(97, 175, 239, 0.2);
+  --nx-accent-subtle: rgba(97, 175, 239, 0.1);
 
-  /* Semantic */
-  --nx-success: #4ade80;
-  --nx-warning: #fbbf24;
-  --nx-error: #f87171;
-  --nx-info: #60a5fa;
+  /* Semantic - One Dark colors */
+  --nx-success: #98c379;
+  --nx-warning: #e5c07b;
+  --nx-error: #e06c75;
+  --nx-info: #61afef;
 
-  /* Text hierarchy */
-  --nx-text-primary: rgba(255, 255, 255, 0.95);
-  --nx-text-secondary: rgba(255, 255, 255, 0.65);
-  --nx-text-tertiary: rgba(255, 255, 255, 0.4);
-  --nx-text-ghost: rgba(255, 255, 255, 0.2);
+  /* Text hierarchy - solid colors for readability */
+  --nx-text-primary: #abb2bf;
+  --nx-text-secondary: #9099a6;
+  --nx-text-tertiary: #6b7280;
+  --nx-text-ghost: #4b5263;
 
   /* Borders & Lines */
-  --nx-border: rgba(255, 255, 255, 0.08);
-  --nx-border-subtle: rgba(255, 255, 255, 0.04);
-  --nx-border-strong: rgba(255, 255, 255, 0.15);
+  --nx-border: rgba(255, 255, 255, 0.1);
+  --nx-border-subtle: rgba(255, 255, 255, 0.05);
+  --nx-border-strong: rgba(255, 255, 255, 0.18);
   --nx-border-focus: var(--nx-accent);
 
   /* Surfaces */
-  --nx-surface: rgba(15, 19, 24, 0.85);
-  --nx-surface-hover: rgba(255, 255, 255, 0.04);
-  --nx-surface-active: rgba(255, 255, 255, 0.08);
-  --nx-surface-selected: rgba(34, 211, 238, 0.12);
+  --nx-surface: rgba(40, 44, 52, 0.9);
+  --nx-surface-hover: rgba(255, 255, 255, 0.05);
+  --nx-surface-active: rgba(255, 255, 255, 0.1);
+  --nx-surface-selected: rgba(97, 175, 239, 0.15);
 
-  /* Glass effect — enhanced for liquid glass */
-  --nx-glass-bg: rgba(8, 12, 18, 0.72);
-  --nx-glass-border: rgba(255, 255, 255, 0.08);
-  --nx-glass-blur: 28px;
-  --nx-glass-saturate: 190%;
+  /* Glass effect */
+  --nx-glass-bg: rgba(33, 37, 43, 0.85);
+  --nx-glass-border: rgba(255, 255, 255, 0.1);
+  --nx-glass-blur: 20px;
+  --nx-glass-saturate: 150%;
 
-  /* Liquid glass accent colors */
-  --nx-liquid-cyan: rgba(103, 232, 249, 0.12);
-  --nx-liquid-violet: rgba(200, 150, 255, 0.08);
-  --nx-liquid-warm: rgba(255, 180, 120, 0.06);
+  /* Shadows */
+  --nx-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --nx-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.35), 0 2px 4px rgba(0, 0, 0, 0.2);
+  --nx-shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.4), 0 4px 8px rgba(0, 0, 0, 0.25);
+  --nx-shadow-glow: 0 0 20px var(--nx-accent-glow);
+  --nx-shadow-inner: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  --nx-shadow-chromatic: 0 8px 24px -8px rgba(97, 175, 239, 0.2);
 
-  /* Shadows - layered depth with chromatic hints */
-  --nx-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
-  --nx-shadow-md: 0 4px 16px rgba(0, 0, 0, 0.45), 0 2px 4px rgba(0, 0, 0, 0.3);
-  --nx-shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.5), 0 4px 12px rgba(0, 0, 0, 0.35);
-  --nx-shadow-glow: 0 0 24px var(--nx-accent-glow), 0 0 48px var(--nx-accent-glow);
-  --nx-shadow-inner: inset 0 1px 0 rgba(255, 255, 255, 0.06);
-  --nx-shadow-chromatic: 0 8px 32px -8px rgba(103, 232, 249, 0.15);
-
-  /* Terminal */
-  --nx-terminal-bg: #080b0f;
-  --nx-terminal-fg: #e2e8f0;
-  --nx-terminal-cursor: var(--nx-accent);
-  --nx-terminal-selection: rgba(34, 211, 238, 0.25);
+  /* Terminal - One Dark */
+  --nx-terminal-bg: #282c34;
+  --nx-terminal-fg: #abb2bf;
+  --nx-terminal-cursor: #528bff;
+  --nx-terminal-selection: rgba(82, 139, 255, 0.3);
 
   /* Layout */
   --nx-radius-sm: 6px;
@@ -129,57 +124,57 @@
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   LIGHT THEME — "Paper Terminal"
-   Warm cream with ink accents
+   LIGHT THEME — "One Light"
+   Clean, readable, high contrast
    ═══════════════════════════════════════════════════════════════════════════ */
 
 [data-theme="light"] {
-  /* Core palette - warm paper */
-  --nx-ink: #faf9f7;
-  --nx-ink-raised: #f5f3f0;
-  --nx-ink-elevated: #efece8;
+  /* Core palette - clean white with subtle warmth */
+  --nx-ink: #fafafa;
+  --nx-ink-raised: #f0f0f0;
+  --nx-ink-elevated: #e5e5e5;
   --nx-ink-float: #ffffff;
 
-  /* Accent: Deep teal */
-  --nx-accent: #0d9488;
-  --nx-accent-dim: #0f766e;
-  --nx-accent-glow: rgba(13, 148, 136, 0.12);
-  --nx-accent-subtle: rgba(13, 148, 136, 0.06);
+  /* Accent: Deep blue for better contrast */
+  --nx-accent: #4078f2;
+  --nx-accent-dim: #3267d6;
+  --nx-accent-glow: rgba(64, 120, 242, 0.15);
+  --nx-accent-subtle: rgba(64, 120, 242, 0.08);
 
-  /* Semantic */
-  --nx-success: #16a34a;
-  --nx-warning: #d97706;
-  --nx-error: #dc2626;
-  --nx-info: #2563eb;
+  /* Semantic - One Light colors */
+  --nx-success: #50a14f;
+  --nx-warning: #c18401;
+  --nx-error: #e45649;
+  --nx-info: #4078f2;
 
-  /* Text hierarchy */
-  --nx-text-primary: rgba(0, 0, 0, 0.9);
-  --nx-text-secondary: rgba(0, 0, 0, 0.6);
-  --nx-text-tertiary: rgba(0, 0, 0, 0.4);
-  --nx-text-ghost: rgba(0, 0, 0, 0.15);
+  /* Text hierarchy - high contrast */
+  --nx-text-primary: #383a42;
+  --nx-text-secondary: #696c77;
+  --nx-text-tertiary: #a0a1a7;
+  --nx-text-ghost: #c8c8c8;
 
   /* Borders */
-  --nx-border: rgba(0, 0, 0, 0.08);
-  --nx-border-subtle: rgba(0, 0, 0, 0.04);
-  --nx-border-strong: rgba(0, 0, 0, 0.15);
+  --nx-border: rgba(0, 0, 0, 0.12);
+  --nx-border-subtle: rgba(0, 0, 0, 0.06);
+  --nx-border-strong: rgba(0, 0, 0, 0.2);
 
   /* Surfaces */
-  --nx-surface: rgba(255, 255, 255, 0.9);
-  --nx-surface-hover: rgba(0, 0, 0, 0.03);
-  --nx-surface-active: rgba(0, 0, 0, 0.06);
-  --nx-surface-selected: rgba(13, 148, 136, 0.1);
+  --nx-surface: rgba(255, 255, 255, 0.95);
+  --nx-surface-hover: rgba(0, 0, 0, 0.04);
+  --nx-surface-active: rgba(0, 0, 0, 0.08);
+  --nx-surface-selected: rgba(64, 120, 242, 0.12);
 
-  /* Glass */
-  --nx-glass-bg: rgba(255, 255, 255, 0.8);
-  --nx-glass-border: rgba(0, 0, 0, 0.06);
+  /* Glass - lighter for light mode */
+  --nx-glass-bg: rgba(250, 250, 250, 0.9);
+  --nx-glass-border: rgba(0, 0, 0, 0.08);
 
-  /* Shadows */
-  --nx-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.06);
-  --nx-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08), 0 1px 3px rgba(0, 0, 0, 0.04);
+  /* Shadows - softer for light mode */
+  --nx-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --nx-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08), 0 1px 3px rgba(0, 0, 0, 0.05);
   --nx-shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.1), 0 2px 8px rgba(0, 0, 0, 0.06);
-  --nx-shadow-inner: inset 0 1px 0 rgba(255, 255, 255, 0.5);
+  --nx-shadow-inner: inset 0 1px 0 rgba(255, 255, 255, 0.8);
 
-  /* Terminal */
-  --nx-terminal-bg: #1e1e1e;
-  --nx-terminal-fg: #d4d4d4;
+  /* Terminal - One Light */
+  --nx-terminal-bg: #fafafa;
+  --nx-terminal-fg: #383a42;
 }
