@@ -646,15 +646,16 @@ function convertTask(raw: any): TaskEntity {
 }
 
 function normalizeSchedulerSettings(raw: any): SchedulerSettings {
-  const concurrency = Number(raw?.concurrency);
+  const source = raw ?? {};
+  const concurrency = Number(source.concurrency);
   const normalizedConcurrency = Number.isFinite(concurrency) ? concurrency : DEFAULT_SCHEDULER_SETTINGS.concurrency;
-  const normalizedAutoDispatch = typeof raw?.auto_dispatch === 'boolean'
-    ? raw.auto_dispatch
-    : (typeof raw?.autoDispatch === 'boolean' ? raw.autoDispatch : DEFAULT_SCHEDULER_SETTINGS.autoDispatch);
+  const normalizedAutoDispatch = typeof source.auto_dispatch === 'boolean'
+    ? source.auto_dispatch
+    : (typeof source.autoDispatch === 'boolean' ? source.autoDispatch : DEFAULT_SCHEDULER_SETTINGS.autoDispatch);
   return {
     concurrency: Math.max(1, normalizedConcurrency),
     autoDispatch: normalizedAutoDispatch,
-    defaultAgentId: raw?.default_agent_id ?? raw?.defaultAgentId ?? DEFAULT_SCHEDULER_SETTINGS.defaultAgentId,
+    defaultAgentId: source.default_agent_id ?? source.defaultAgentId ?? DEFAULT_SCHEDULER_SETTINGS.defaultAgentId,
   };
 }
 
@@ -1614,7 +1615,7 @@ export async function importWorkspaceFromJson(json: string): Promise<void> {
     }
 
     if (!progressed) {
-      throw new Error('Could not resolve imported task hierarchy');
+      throw new Error('Could not resolve imported task hierarchy because one or more parent task references are missing');
     }
     pendingTasks = deferred;
   }

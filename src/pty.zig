@@ -150,7 +150,10 @@ fn resolveWorkingDirectory(allocator: std.mem.Allocator, dir: []const u8) ![]con
         return allocator.dupe(u8, home);
     }
     if (dir.len > 1 and dir[1] == '/') {
-        return std.fmt.allocPrint(allocator, "{s}{s}", .{ home, dir[1..] });
+        if (dir.len == 2) {
+            return allocator.dupe(u8, home);
+        }
+        return std.fmt.allocPrint(allocator, "{s}/{s}", .{ home, dir[2..] });
     }
     return dir;
 }
