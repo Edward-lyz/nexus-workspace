@@ -1606,15 +1606,14 @@ export async function importWorkspaceFromJson(json: string): Promise<void> {
   notes.value = data.notes.map(note => ({
     ...note,
     spaceId: spaceIdMap.get(note.spaceId) ?? activeSpaceId.value ?? note.spaceId,
-    linkedPaneId: note.linkedPaneId ? taskIdMap.get(note.linkedPaneId) : undefined,
+    linkedPaneId: note.linkedPaneId,
   }));
 
   await hydrateState();
 }
 
 // Backend-backed export (full persistence)
-export async function exportWorkspace(workspaceId: string): Promise<string> {
-  void workspaceId;
+export async function exportWorkspace(): Promise<string> {
   return exportWorkspaceToJson();
 }
 
