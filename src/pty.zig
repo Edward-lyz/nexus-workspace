@@ -60,7 +60,9 @@ pub fn spawn(
     if (pid == 0) {
         // Child process
         if (cwd) |dir| {
-            std.posix.chdir(dir) catch {};
+            const resolved_dir = resolveWorkingDirectory(allocator, dir) catch dir;
+            defer if (resolved_dir.ptr != dir.ptr) allocator.free(resolved_dir);
+            std.posix.chdir(resolved_dir) catch {};
         }
 
         // Set environment variables - these modify the process environment
@@ -80,13 +82,13 @@ pub fn spawn(
             // Wrap command in login shell to get full environment
             const shell = std.posix.getenv("SHELL") orelse "/bin/zsh";
             const wrapped_cmd = std.fmt.allocPrintSentinel(allocator,
-                "source ~/.zshrc 2>/dev/null || source ~/.bashrc 2>/dev/null; {s}",
+                "exec {s}",
                 .{cmd}, 0) catch {
                 std.posix.exit(1);
             };
             const argv = [_:null]?[*:0]const u8{
                 @ptrCast(shell),
-                "-l".ptr,
+                "-il".ptr,
                 "-c".ptr,
                 wrapped_cmd.ptr,
                 null,
@@ -123,6 +125,21 @@ pub fn spawn(
         .child_pid = pid,
         .allocator = allocator,
     };
+}
+
+fn resolveWorkingDirectory(allocator: std.mem.Allocator, dir: []const u8) ![]const u8 {
+    if (dir.len == 0 or dir[0] != '~') {
+        return dir;
+    }
+
+    const home = std.posix.getenv("HOME") orelse return dir;
+    if (std.mem.eql(u8, dir, "~")) {
+        return allocator.dupe(u8, home);
+    }
+    if (dir.len > 1 and dir[1] == '/') {
+        return std.fmt.allocPrint(allocator, "{s}{s}", .{ home, dir[1..] });
+    }
+    return dir;
 }
 
 extern "c" fn forkpty(

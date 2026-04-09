@@ -440,9 +440,13 @@ pub const Server = struct {
         const workspace_id = getStr(params, "workspace_id") orelse return;
         const name = getStr(params, "name") orelse "Space";
         const dir_path = getStr(params, "directory_path") orelse "";
+        const requested_id = getStr(params, "id");
 
-        const space_id = std.fmt.allocPrint(self.allocator, "sp-{d}", .{std.time.timestamp()}) catch return;
-        defer self.allocator.free(space_id);
+        const space_id = requested_id orelse blk: {
+            const generated = std.fmt.allocPrint(self.allocator, "sp-{d}", .{std.time.timestamp()}) catch return;
+            break :blk generated;
+        };
+        defer if (requested_id == null) self.allocator.free(space_id);
 
         self.db.createSpace(space_id, workspace_id, name, dir_path) catch |err| {
             sendError(client, id, -32000, @errorName(err));
@@ -594,18 +598,40 @@ pub const Server = struct {
         const description = getStr(params, "description") orelse "";
         const priority = getStr(params, "priority") orelse "medium";
         const parent_task_id = getStr(params, "parent_task_id");
+        const requested_id = getStr(params, "id");
 
-        const task_id = std.fmt.allocPrint(self.allocator, "task-{d}", .{std.time.timestamp()}) catch return;
-        defer self.allocator.free(task_id);
+        const task_id = requested_id orelse blk: {
+            const generated = std.fmt.allocPrint(self.allocator, "task-{d}", .{std.time.timestamp()}) catch return;
+            break :blk generated;
+        };
+        defer if (requested_id == null) self.allocator.free(task_id);
 
         self.db.createTask(task_id, space_id, title, description, priority, parent_task_id) catch |err| {
             sendError(client, id, -32000, @errorName(err));
             return;
         };
 
-        var resp_buf: [512]u8 = undefined;
-        const resp = std.fmt.bufPrint(&resp_buf, "{{\"id\":\"{s}\",\"space_id\":\"{s}\",\"title\":\"{s}\",\"status\":\"todo\",\"priority\":\"{s}\",\"queue_status\":\"none\"}}", .{ task_id, space_id, title, priority }) catch return;
-        sendResult(client, id, resp);
+        var resp_buf: [1024]u8 = undefined;
+        var fbs = std.io.fixedBufferStream(&resp_buf);
+        const writer = fbs.writer();
+        writer.writeByte('{') catch return;
+        writer.writeAll("\"id\":") catch return;
+        writeJsonString(writer, task_id) catch return;
+        writer.writeAll(",\"space_id\":") catch return;
+        writeJsonString(writer, space_id) catch return;
+        writer.writeAll(",\"title\":") catch return;
+        writeJsonString(writer, title) catch return;
+        writer.writeAll(",\"description\":") catch return;
+        writeJsonString(writer, description) catch return;
+        writer.writeAll(",\"status\":\"todo\",\"priority\":") catch return;
+        writeJsonString(writer, priority) catch return;
+        writer.writeAll(",\"queue_status\":\"none\"") catch return;
+        if (parent_task_id) |parent| {
+            writer.writeAll(",\"parent_task_id\":") catch return;
+            writeJsonString(writer, parent) catch return;
+        }
+        writer.writeByte('}') catch return;
+        sendResult(client, id, fbs.getWritten());
     }
 
     fn rpcTaskUpdate(self: *Server, params: std.json.ObjectMap, id: ?std.json.Value, client: *Client) void {
@@ -1531,6 +1557,21 @@ fn mimeType(path: []const u8) []const u8 {
     if (std.mem.endsWith(u8, path, ".woff")) return "font/woff";
     if (std.mem.endsWith(u8, path, ".png")) return "image/png";
     return "application/octet-stream";
+}
+
+fn writeJsonString(writer: anytype, value: []const u8) !void {
+    try writer.writeByte('"');
+    for (value) |ch| {
+        switch (ch) {
+            '"' => try writer.writeAll("\\\""),
+            '\\' => try writer.writeAll("\\\\"),
+            '\n' => try writer.writeAll("\\n"),
+            '\r' => try writer.writeAll("\\r"),
+            '\t' => try writer.writeAll("\\t"),
+            else => try writer.writeByte(ch),
+        }
+    }
+    try writer.writeByte('"');
 }
 
 fn sendResult(client: *Client, id: ?std.json.Value, result: []const u8) void {
