@@ -52,7 +52,13 @@ xattr -cr /Applications/Nexus.app
 
 ## Screenshots
 
-<!-- TODO: Add screenshots -->
+<p align="center">
+  <img src="assets/screenshot_multi_window.png" alt="Multi-window workspace" width="100%">
+</p>
+
+<p align="center">
+  <img src="assets/screenshot_agent_detail.png" alt="Agent detail view" width="100%">
+</p>
 
 ## Architecture
 
