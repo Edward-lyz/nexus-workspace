@@ -429,6 +429,7 @@ pub const Server = struct {
         };
         defer self.allocator.free(path);
 
+        // Leave enough room for escaped task titles/descriptions in the RPC response payload.
         var resp_buf: [4096]u8 = undefined;
         const resp = std.fmt.bufPrint(&resp_buf, "\"{s}\"", .{path}) catch return;
         sendResult(client, id, resp);

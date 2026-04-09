@@ -1665,8 +1665,7 @@ async function dispatchTaskToSlot(taskId: string, slotId: string): Promise<void>
   const task = tasks.value.get(taskId);
   if (!task) return;
 
-  const defaultAgentId = schedulerSettings.value.defaultAgentId?.trim();
-  const agentProviderId = defaultAgentId ? defaultAgentId : slot.agentProviderId;
+  const agentProviderId = schedulerSettings.value.defaultAgentId?.trim() || slot.agentProviderId;
   const prompt = task.description || task.title;
 
   // 1. Assign task to agent via backend (handles bidirectional update)

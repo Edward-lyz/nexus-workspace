@@ -84,6 +84,7 @@ pub fn spawn(
             defer allocator.free(wrapped_cmd);
             const argv = [_:null]?[*:0]const u8{
                 @ptrCast(shell),
+                // Use both login and interactive modes so shell profile files populate CLI auth env vars.
                 "-il".ptr,
                 "-c".ptr,
                 wrapped_cmd.ptr,
