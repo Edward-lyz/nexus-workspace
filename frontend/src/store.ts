@@ -647,11 +647,13 @@ function convertTask(raw: any): TaskEntity {
 
 function normalizeSchedulerSettings(raw: any): SchedulerSettings {
   const concurrency = Number(raw?.concurrency);
+  const normalizedConcurrency = Number.isFinite(concurrency) ? concurrency : DEFAULT_SCHEDULER_SETTINGS.concurrency;
+  const normalizedAutoDispatch = typeof raw?.auto_dispatch === 'boolean'
+    ? raw.auto_dispatch
+    : (typeof raw?.autoDispatch === 'boolean' ? raw.autoDispatch : DEFAULT_SCHEDULER_SETTINGS.autoDispatch);
   return {
-    concurrency: Math.max(1, Number.isFinite(concurrency) ? concurrency : DEFAULT_SCHEDULER_SETTINGS.concurrency),
-    autoDispatch: typeof raw?.auto_dispatch === 'boolean'
-      ? raw.auto_dispatch
-      : (typeof raw?.autoDispatch === 'boolean' ? raw.autoDispatch : DEFAULT_SCHEDULER_SETTINGS.autoDispatch),
+    concurrency: Math.max(1, normalizedConcurrency),
+    autoDispatch: normalizedAutoDispatch,
     defaultAgentId: raw?.default_agent_id ?? raw?.defaultAgentId ?? DEFAULT_SCHEDULER_SETTINGS.defaultAgentId,
   };
 }
@@ -1634,7 +1636,8 @@ async function dispatchTaskToSlot(taskId: string, slotId: string): Promise<void>
   const task = tasks.value.get(taskId);
   if (!task) return;
 
-  const agentProviderId = schedulerSettings.value.defaultAgentId || slot.agentProviderId;
+  const defaultAgentId = schedulerSettings.value.defaultAgentId?.trim();
+  const agentProviderId = defaultAgentId ? defaultAgentId : slot.agentProviderId;
   const prompt = task.description || task.title;
 
   // 1. Assign task to agent via backend (handles bidirectional update)
