@@ -646,8 +646,9 @@ function convertTask(raw: any): TaskEntity {
 }
 
 function normalizeSchedulerSettings(raw: any): SchedulerSettings {
+  const concurrency = Number(raw?.concurrency);
   return {
-    concurrency: Math.max(1, Number(raw?.concurrency ?? DEFAULT_SCHEDULER_SETTINGS.concurrency) || DEFAULT_SCHEDULER_SETTINGS.concurrency),
+    concurrency: Math.max(1, Number.isFinite(concurrency) ? concurrency : DEFAULT_SCHEDULER_SETTINGS.concurrency),
     autoDispatch: typeof raw?.auto_dispatch === 'boolean' ? raw.auto_dispatch : (raw?.autoDispatch ?? DEFAULT_SCHEDULER_SETTINGS.autoDispatch),
     defaultAgentId: raw?.default_agent_id ?? raw?.defaultAgentId ?? DEFAULT_SCHEDULER_SETTINGS.defaultAgentId,
   };
@@ -1555,17 +1556,22 @@ export async function importWorkspaceFromJson(json: string): Promise<void> {
   }
 
   const taskIdMap = new Map<string, string>();
-  const pendingTasks = [...data.tasks];
+  let pendingTasks = [...data.tasks];
   while (pendingTasks.length > 0) {
+    const deferred: TaskEntity[] = [];
     let progressed = false;
 
-    for (let i = 0; i < pendingTasks.length; i++) {
-      const task = pendingTasks[i];
+    for (const task of pendingTasks) {
       const mappedSpaceId = spaceIdMap.get(task.spaceId) ?? activeSpaceId.value;
-      const mappedParentTaskId = task.parentTaskId ? taskIdMap.get(task.parentTaskId) : undefined;
+      if (!mappedSpaceId) {
+        throw new Error(`Could not map imported task "${task.title}" to a space`);
+      }
 
-      if (task.parentTaskId && !mappedParentTaskId) continue;
-      if (!mappedSpaceId) continue;
+      const mappedParentTaskId = task.parentTaskId ? taskIdMap.get(task.parentTaskId) : undefined;
+      if (task.parentTaskId && !mappedParentTaskId) {
+        deferred.push(task);
+        continue;
+      }
 
       const created = await ipc.call<any>('task.create', {
         id: task.id,
@@ -1588,14 +1594,13 @@ export async function importWorkspaceFromJson(json: string): Promise<void> {
         });
       }
 
-      pendingTasks.splice(i, 1);
-      i--;
       progressed = true;
     }
 
     if (!progressed) {
       throw new Error('Could not resolve imported task hierarchy');
     }
+    pendingTasks = deferred;
   }
 
   notes.value = data.notes.map(note => ({
