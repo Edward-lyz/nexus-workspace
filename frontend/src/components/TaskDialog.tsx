@@ -11,11 +11,11 @@ export function TaskDialog({ onClose }: Props) {
 
   useEffect(() => { titleRef.current?.focus(); }, []);
 
-  const submit = () => {
+  const submit = async () => {
     const title = titleRef.current?.value.trim();
     if (!title) return;
 
-    const pane = createTask(title, '...', priority);
+    const pane = await createTask(title, '...', priority);
     onClose();
 
     if (pane) {
@@ -36,7 +36,7 @@ export function TaskDialog({ onClose }: Props) {
           ref={titleRef}
           class="dialog-input"
           placeholder="e.g., Fix login bug, Add dark mode..."
-          onKeyDown={(e) => { if (e.key === 'Enter') submit(); }}
+          onKeyDown={(e) => { if (e.key === 'Enter') void submit(); }}
         />
         <label class="dialog-label">Priority</label>
         <div class="dialog-agents">
@@ -51,7 +51,7 @@ export function TaskDialog({ onClose }: Props) {
         </div>
         <div class="dialog-actions">
           <button class="dialog-cancel" onClick={onClose}>Cancel</button>
-          <button class="dialog-submit" onClick={submit}>Create</button>
+          <button class="dialog-submit" onClick={() => void submit()}>Create</button>
         </div>
         <div class="dialog-hint">AI will fill description in background</div>
       </div>

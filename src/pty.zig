@@ -69,9 +69,8 @@ pub fn spawn(
         // Ensure common user bin paths are in PATH for macOS app bundles
         const current_path = std.posix.getenv("PATH") orelse "/usr/bin:/bin";
         const home = std.posix.getenv("HOME") orelse "";
-        const extended_path = std.fmt.allocPrintSentinel(allocator,
-            "{s}/.local/bin:{s}/.npm-global/bin:{s}/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:{s}",
-            .{ home, home, home, current_path }, 0) catch current_path;
+        const extended_path = buildExtendedPath(allocator, home, current_path) catch std.posix.exit(1);
+        defer allocator.free(extended_path);
         _ = setenv("PATH", extended_path, 1);
 
         // Source user profile to get additional env vars (ANTHROPIC_API_KEY, etc.)
@@ -79,11 +78,8 @@ pub fn spawn(
         if (command) |cmd| {
             // Wrap command in login shell to get full environment
             const shell = std.posix.getenv("SHELL") orelse "/bin/zsh";
-            const wrapped_cmd = std.fmt.allocPrintSentinel(allocator,
-                "source ~/.zshrc 2>/dev/null || source ~/.bashrc 2>/dev/null; {s}",
-                .{cmd}, 0) catch {
-                std.posix.exit(1);
-            };
+            const wrapped_cmd = buildWrappedCommand(allocator, cmd) catch std.posix.exit(1);
+            defer allocator.free(wrapped_cmd);
             const argv = [_:null]?[*:0]const u8{
                 @ptrCast(shell),
                 "-l".ptr,
@@ -96,10 +92,8 @@ pub fn spawn(
             std.posix.execvpeZ(@ptrCast(shell), &argv, envp) catch {};
         } else {
             const shell = std.posix.getenv("SHELL") orelse "/bin/zsh";
-            const shell_basename = std.fs.path.basename(shell);
-            const login_name = std.fmt.allocPrintSentinel(allocator, "-{s}", .{shell_basename}, 0) catch {
-                std.posix.exit(1);
-            };
+            const login_name = buildLoginArg0(allocator, shell) catch std.posix.exit(1);
+            defer allocator.free(login_name);
 
             const argv = [_:null]?[*:0]const u8{
                 login_name.ptr,
@@ -125,6 +119,24 @@ pub fn spawn(
     };
 }
 
+fn buildExtendedPath(allocator: std.mem.Allocator, home: []const u8, current_path: []const u8) ![:0]u8 {
+    return std.fmt.allocPrintSentinel(allocator,
+        "{s}/.local/bin:{s}/.npm-global/bin:{s}/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:{s}",
+        .{ home, home, home, current_path }, 0);
+}
+
+fn buildWrappedCommand(allocator: std.mem.Allocator, command: []const u8) ![:0]u8 {
+    return std.fmt.allocPrintSentinel(allocator,
+        "source ~/.zshrc 2>/dev/null || source ~/.bashrc 2>/dev/null; {s}",
+        .{command},
+        0,
+    );
+}
+
+fn buildLoginArg0(allocator: std.mem.Allocator, shell: []const u8) ![:0]u8 {
+    return std.fmt.allocPrintSentinel(allocator, "-{s}", .{std.fs.path.basename(shell)}, 0);
+}
+
 extern "c" fn forkpty(
     master: *posix.fd_t,
     name: ?[*:0]u8,
@@ -140,4 +152,34 @@ extern "c" fn setenv(
 
 comptime {
     _ = @import("std").c;
+}
+
+test "buildExtendedPath keeps inherited PATH while prepending user tool directories" {
+    const allocator = std.testing.allocator;
+    const path = try buildExtendedPath(allocator, "/Users/edward", "/usr/bin:/bin");
+    defer allocator.free(path);
+
+    try std.testing.expectEqualStrings(
+        "/Users/edward/.local/bin:/Users/edward/.npm-global/bin:/Users/edward/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin",
+        std.mem.sliceTo(path, 0),
+    );
+}
+
+test "buildWrappedCommand sources shell profiles before running the command" {
+    const allocator = std.testing.allocator;
+    const wrapped = try buildWrappedCommand(allocator, "echo $FOO");
+    defer allocator.free(wrapped);
+
+    try std.testing.expectEqualStrings(
+        "source ~/.zshrc 2>/dev/null || source ~/.bashrc 2>/dev/null; echo $FOO",
+        std.mem.sliceTo(wrapped, 0),
+    );
+}
+
+test "buildLoginArg0 converts the shell basename into a login-shell argv0" {
+    const allocator = std.testing.allocator;
+    const login_arg0 = try buildLoginArg0(allocator, "/bin/zsh");
+    defer allocator.free(login_arg0);
+
+    try std.testing.expectEqualStrings("-zsh", std.mem.sliceTo(login_arg0, 0));
 }
