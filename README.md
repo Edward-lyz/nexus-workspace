@@ -60,6 +60,19 @@ zig build run
 zig build -Doptimize=ReleaseFast
 ```
 
+## Testing
+
+```bash
+# Frontend functional/unit coverage
+npm --prefix frontend run test:run
+
+# Backend Zig coverage
+zig build test
+
+# Run both test suites
+./tests/run-functional-tests.sh
+```
+
 ### Package as macOS App
 
 ```bash
