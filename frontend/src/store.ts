@@ -649,7 +649,9 @@ function normalizeSchedulerSettings(raw: any): SchedulerSettings {
   const concurrency = Number(raw?.concurrency);
   return {
     concurrency: Math.max(1, Number.isFinite(concurrency) ? concurrency : DEFAULT_SCHEDULER_SETTINGS.concurrency),
-    autoDispatch: typeof raw?.auto_dispatch === 'boolean' ? raw.auto_dispatch : (raw?.autoDispatch ?? DEFAULT_SCHEDULER_SETTINGS.autoDispatch),
+    autoDispatch: typeof raw?.auto_dispatch === 'boolean'
+      ? raw.auto_dispatch
+      : (typeof raw?.autoDispatch === 'boolean' ? raw.autoDispatch : DEFAULT_SCHEDULER_SETTINGS.autoDispatch),
     defaultAgentId: raw?.default_agent_id ?? raw?.defaultAgentId ?? DEFAULT_SCHEDULER_SETTINGS.defaultAgentId,
   };
 }
@@ -1606,7 +1608,6 @@ export async function importWorkspaceFromJson(json: string): Promise<void> {
   notes.value = data.notes.map(note => ({
     ...note,
     spaceId: spaceIdMap.get(note.spaceId) ?? activeSpaceId.value ?? note.spaceId,
-    linkedPaneId: note.linkedPaneId,
   }));
 
   await hydrateState();
