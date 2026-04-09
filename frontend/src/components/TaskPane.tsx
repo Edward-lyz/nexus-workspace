@@ -2,6 +2,8 @@ import { useState } from 'preact/hooks';
 import {
   focusedPaneId, focusPane, deletePane, updatePane, getLinkedPane,
   spawnAgentForTask, spawnShellForTask, BUILTIN_AGENTS, exportTaskContext, cloneTaskToAgent,
+  expandPane, getAgentForTask, tasks, getSubtasks, getTaskAncestors,
+  type TaskEntity,
 } from '../store';
 import { TerminalPane, terminalRegistry } from './TerminalPane';
 import type { PaneState } from '../store';
@@ -18,11 +20,16 @@ const PRIORITY_LABELS: Record<string, string> = {
 
 interface Props {
   pane: PaneState;
+  onEdit?: (taskId: string) => void;
 }
 
-export function TaskPane({ pane }: Props) {
+export function TaskPane({ pane, onEdit }: Props) {
   const isFocused = focusedPaneId.value === pane.id;
   const linked = getLinkedPane(pane.id);
+  const assignedAgent = getAgentForTask(pane.id);
+  const taskEntity = tasks.value.get(pane.id);
+  const subtasks = getSubtasks(pane.id);
+  const ancestors = getTaskAncestors(pane.id);
   const [showDispatch, setShowDispatch] = useState(false);
   const [showClone, setShowClone] = useState(false);
 
@@ -56,13 +63,40 @@ export function TaskPane({ pane }: Props) {
             onClick={() => updatePane(pane.id, { taskStatus: nextStatus as PaneState['taskStatus'] })}
             title={`Click to mark as ${STATUS_LABELS[nextStatus]}`}
           >{STATUS_LABELS[statusKey]}</button>
+          <button class="btn-edit" onClick={(e) => { e.stopPropagation(); onEdit?.(pane.id); }} title="Edit task">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+            </svg>
+          </button>
+          <button class="btn-expand" onClick={(e) => { e.stopPropagation(); expandPane(pane.id); }} title="Expand panel">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>
+            </svg>
+          </button>
           <button class="btn-close" onClick={(e) => { e.stopPropagation(); deletePane(pane.id); }}>x</button>
         </span>
       </div>
 
       <div class="task-meta">
-        <div class="task-title">{pane.taskTitle}</div>
+        <div class="task-title" onDblClick={() => onEdit?.(pane.id)}>{pane.taskTitle}</div>
         {pane.taskDescription && <div class="task-desc">{pane.taskDescription}</div>}
+
+        {/* Show subtasks count if any */}
+        {subtasks.length > 0 && (
+          <div class="task-subtasks-badge">{subtasks.length} subtask{subtasks.length > 1 ? 's' : ''}</div>
+        )}
+
+        {/* Show breadcrumb if this is a subtask */}
+        {ancestors.length > 0 && (
+          <div class="task-breadcrumb">
+            {ancestors.map((a, i) => (
+              <span key={a.id}>
+                {i > 0 && ' > '}
+                <span class="breadcrumb-item">{a.title}</span>
+              </span>
+            ))}
+          </div>
+        )}
 
         {!linked && (
           <div class="task-actions">
@@ -99,6 +133,11 @@ export function TaskPane({ pane }: Props) {
             </span>
             <span class="task-link-id">{linked.sessionId}</span>
             {linked.sessionStatus === 'exited' && <span class="task-link-status">ended</span>}
+            {assignedAgent && (
+              <span class="task-slot-badge" title={`Assigned to ${assignedAgent.slotId}`}>
+                {assignedAgent.slotId.replace('slot-', '#')}
+              </span>
+            )}
           </div>
         )}
 

@@ -1,22 +1,24 @@
-import { useRef, useEffect } from 'preact/hooks';
+import { useRef, useEffect, useState } from 'preact/hooks';
 import { TerminalPane } from './TerminalPane';
 import { TaskPane } from './TaskPane';
+import { TaskEditDialog } from './TaskEditDialog';
 import { activeSpaceGridPanes } from '../store';
 import type { PaneState } from '../store';
-
-function renderPane(pane: PaneState) {
-  switch (pane.kind) {
-    case 'shell':
-    case 'agent':
-      return <TerminalPane pane={pane} />;
-    case 'task':
-      return <TaskPane pane={pane} />;
-  }
-}
 
 export function TilingGrid() {
   const gridRef = useRef<HTMLDivElement>(null);
   const panesVal = activeSpaceGridPanes.value;
+  const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
+
+  function renderPane(pane: PaneState) {
+    switch (pane.kind) {
+      case 'shell':
+      case 'agent':
+        return <TerminalPane pane={pane} />;
+      case 'task':
+        return <TaskPane pane={pane} onEdit={setEditingTaskId} />;
+    }
+  }
 
   // Fix column width: % in overflow-x:auto grids is based on scroll width, not visible width.
   // Use ResizeObserver to set --grid-col-w from the actual container visible width.
@@ -56,12 +58,17 @@ export function TilingGrid() {
   });
 
   return (
-    <div class="tiling-grid" ref={gridRef}>
-      {panesVal.map(pane => (
-        <div key={pane.id} class="grid-cell">
-          {renderPane(pane)}
-        </div>
-      ))}
-    </div>
+    <>
+      <div class="tiling-grid" ref={gridRef}>
+        {panesVal.map(pane => (
+          <div key={pane.id} class="grid-cell">
+            {renderPane(pane)}
+          </div>
+        ))}
+      </div>
+      {editingTaskId && (
+        <TaskEditDialog taskId={editingTaskId} onClose={() => setEditingTaskId(null)} />
+      )}
+    </>
   );
 }

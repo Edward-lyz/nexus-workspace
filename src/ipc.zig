@@ -239,6 +239,40 @@ pub const Server = struct {
         } else if (std.mem.eql(u8, method, "node.update")) {
             self.rpcNodeUpdate(params, id, client);
         }
+        // Task methods
+        else if (std.mem.eql(u8, method, "task.create")) {
+            self.rpcTaskCreate(params, id, client);
+        } else if (std.mem.eql(u8, method, "task.update")) {
+            self.rpcTaskUpdate(params, id, client);
+        } else if (std.mem.eql(u8, method, "task.delete")) {
+            self.rpcTaskDelete(params, id, client);
+        } else if (std.mem.eql(u8, method, "task.list")) {
+            self.rpcTaskList(params, id, client);
+        } else if (std.mem.eql(u8, method, "task.enqueue")) {
+            self.rpcTaskEnqueue(params, id, client);
+        } else if (std.mem.eql(u8, method, "task.assign")) {
+            self.rpcTaskAssign(params, id, client);
+        } else if (std.mem.eql(u8, method, "task.unassign")) {
+            self.rpcTaskUnassign(params, id, client);
+        }
+        // Agent methods
+        else if (std.mem.eql(u8, method, "agent.create")) {
+            self.rpcAgentCreate(params, id, client);
+        } else if (std.mem.eql(u8, method, "agent.update")) {
+            self.rpcAgentUpdate(params, id, client);
+        } else if (std.mem.eql(u8, method, "agent.delete")) {
+            self.rpcAgentDelete(params, id, client);
+        } else if (std.mem.eql(u8, method, "agent.list")) {
+            self.rpcAgentList(params, id, client);
+        }
+        // Scheduler methods
+        else if (std.mem.eql(u8, method, "scheduler.getSettings")) {
+            self.rpcSchedulerGetSettings(params, id, client);
+        } else if (std.mem.eql(u8, method, "scheduler.setSettings")) {
+            self.rpcSchedulerSetSettings(params, id, client);
+        } else if (std.mem.eql(u8, method, "scheduler.initPool")) {
+            self.rpcSchedulerInitPool(params, id, client);
+        }
         // State hydration
         else if (std.mem.eql(u8, method, "state.hydrate")) {
             self.rpcStateHydrate(id, client);
@@ -549,6 +583,344 @@ pub const Server = struct {
         sendResult(client, id, "true");
     }
 
+    // -- Task RPC handlers --
+
+    fn rpcTaskCreate(self: *Server, params: std.json.ObjectMap, id: ?std.json.Value, client: *Client) void {
+        const space_id = getStr(params, "space_id") orelse {
+            sendError(client, id, -32602, "Missing space_id");
+            return;
+        };
+        const title = getStr(params, "title") orelse "";
+        const description = getStr(params, "description") orelse "";
+        const priority = getStr(params, "priority") orelse "medium";
+        const parent_task_id = getStr(params, "parent_task_id");
+
+        const task_id = std.fmt.allocPrint(self.allocator, "task-{d}", .{std.time.timestamp()}) catch return;
+        defer self.allocator.free(task_id);
+
+        self.db.createTask(task_id, space_id, title, description, priority, parent_task_id) catch |err| {
+            sendError(client, id, -32000, @errorName(err));
+            return;
+        };
+
+        var resp_buf: [512]u8 = undefined;
+        const resp = std.fmt.bufPrint(&resp_buf, "{{\"id\":\"{s}\",\"space_id\":\"{s}\",\"title\":\"{s}\",\"status\":\"todo\",\"priority\":\"{s}\",\"queue_status\":\"none\"}}", .{ task_id, space_id, title, priority }) catch return;
+        sendResult(client, id, resp);
+    }
+
+    fn rpcTaskUpdate(self: *Server, params: std.json.ObjectMap, id: ?std.json.Value, client: *Client) void {
+        const task_id = getStr(params, "id") orelse {
+            sendError(client, id, -32602, "Missing id");
+            return;
+        };
+
+        self.db.updateTask(
+            task_id,
+            getStr(params, "title"),
+            getStr(params, "description"),
+            getStr(params, "status"),
+            getStr(params, "priority"),
+            getStr(params, "queue_status"),
+        ) catch |err| {
+            sendError(client, id, -32000, @errorName(err));
+            return;
+        };
+
+        sendResult(client, id, "true");
+    }
+
+    fn rpcTaskDelete(self: *Server, params: std.json.ObjectMap, id: ?std.json.Value, client: *Client) void {
+        const task_id = getStr(params, "id") orelse return;
+        self.db.deleteTask(task_id) catch |err| {
+            sendError(client, id, -32000, @errorName(err));
+            return;
+        };
+        sendResult(client, id, "true");
+    }
+
+    fn rpcTaskList(self: *Server, params: std.json.ObjectMap, id: ?std.json.Value, client: *Client) void {
+        const space_id = getStr(params, "space_id") orelse {
+            sendError(client, id, -32602, "Missing space_id");
+            return;
+        };
+        const parent_task_id = getStr(params, "parent_task_id");
+
+        const rows = self.db.listTasks(self.allocator, space_id, parent_task_id) catch {
+            sendResult(client, id, "[]");
+            return;
+        };
+        defer {
+            for (rows) |row| {
+                self.allocator.free(row.id);
+                self.allocator.free(row.space_id);
+                if (row.parent_task_id) |p| self.allocator.free(p);
+                self.allocator.free(row.title);
+                self.allocator.free(row.description);
+                self.allocator.free(row.status);
+                self.allocator.free(row.priority);
+                self.allocator.free(row.queue_status);
+                if (row.assigned_agent_id) |a| self.allocator.free(a);
+                if (row.node_id) |n| self.allocator.free(n);
+            }
+            self.allocator.free(rows);
+        }
+
+        var buf: [16384]u8 = undefined;
+        var fbs = std.io.fixedBufferStream(&buf);
+        const writer = fbs.writer();
+        writer.writeByte('[') catch return;
+        for (rows, 0..) |row, i| {
+            if (i > 0) writer.writeByte(',') catch return;
+            std.fmt.format(writer, "{{\"id\":\"{s}\",\"space_id\":\"{s}\",\"title\":\"{s}\",\"description\":\"{s}\",\"status\":\"{s}\",\"priority\":\"{s}\",\"queue_status\":\"{s}\"", .{ row.id, row.space_id, row.title, row.description, row.status, row.priority, row.queue_status }) catch return;
+            if (row.parent_task_id) |p| {
+                std.fmt.format(writer, ",\"parent_task_id\":\"{s}\"", .{p}) catch return;
+            }
+            if (row.assigned_agent_id) |a| {
+                std.fmt.format(writer, ",\"assigned_agent_id\":\"{s}\"", .{a}) catch return;
+            }
+            if (row.queued_at) |q| {
+                std.fmt.format(writer, ",\"queued_at\":{d}", .{q}) catch return;
+            }
+            if (row.dispatched_at) |d| {
+                std.fmt.format(writer, ",\"dispatched_at\":{d}", .{d}) catch return;
+            }
+            if (row.completed_at) |c| {
+                std.fmt.format(writer, ",\"completed_at\":{d}", .{c}) catch return;
+            }
+            std.fmt.format(writer, ",\"sort_order\":{d},\"created_at\":{d}}}", .{ row.sort_order, row.created_at }) catch return;
+        }
+        writer.writeByte(']') catch return;
+        sendResult(client, id, fbs.getWritten());
+    }
+
+    fn rpcTaskEnqueue(self: *Server, params: std.json.ObjectMap, id: ?std.json.Value, client: *Client) void {
+        const task_id = getStr(params, "id") orelse {
+            sendError(client, id, -32602, "Missing id");
+            return;
+        };
+        self.db.enqueueTask(task_id) catch |err| {
+            sendError(client, id, -32000, @errorName(err));
+            return;
+        };
+        sendResult(client, id, "true");
+    }
+
+    fn rpcTaskAssign(self: *Server, params: std.json.ObjectMap, id: ?std.json.Value, client: *Client) void {
+        const task_id = getStr(params, "task_id") orelse {
+            sendError(client, id, -32602, "Missing task_id");
+            return;
+        };
+        const agent_id = getStr(params, "agent_id") orelse {
+            sendError(client, id, -32602, "Missing agent_id");
+            return;
+        };
+
+        self.db.assignTaskToAgent(task_id, agent_id) catch |err| {
+            sendError(client, id, -32000, @errorName(err));
+            return;
+        };
+
+        var resp_buf: [256]u8 = undefined;
+        const resp = std.fmt.bufPrint(&resp_buf, "{{\"task_id\":\"{s}\",\"agent_id\":\"{s}\"}}", .{ task_id, agent_id }) catch return;
+        sendResult(client, id, resp);
+    }
+
+    fn rpcTaskUnassign(self: *Server, params: std.json.ObjectMap, id: ?std.json.Value, client: *Client) void {
+        const task_id = getStr(params, "id") orelse {
+            sendError(client, id, -32602, "Missing id");
+            return;
+        };
+
+        self.db.unassignTask(task_id) catch |err| {
+            sendError(client, id, -32000, @errorName(err));
+            return;
+        };
+        sendResult(client, id, "true");
+    }
+
+    // -- Agent RPC handlers --
+
+    fn rpcAgentCreate(self: *Server, params: std.json.ObjectMap, id: ?std.json.Value, client: *Client) void {
+        const space_id = getStr(params, "space_id") orelse {
+            sendError(client, id, -32602, "Missing space_id");
+            return;
+        };
+        const provider_id = getStr(params, "provider_id") orelse "claude";
+        const provider_name = getStr(params, "provider_name") orelse "Claude Code";
+        const slot_id = getStr(params, "slot_id");
+
+        const agent_id = slot_id orelse blk: {
+            const generated = std.fmt.allocPrint(self.allocator, "agent-{d}", .{std.time.timestamp()}) catch return;
+            break :blk generated;
+        };
+        defer if (slot_id == null) self.allocator.free(agent_id);
+
+        self.db.createAgent(agent_id, space_id, provider_id, provider_name) catch |err| {
+            sendError(client, id, -32000, @errorName(err));
+            return;
+        };
+
+        var resp_buf: [256]u8 = undefined;
+        const resp = std.fmt.bufPrint(&resp_buf, "{{\"id\":\"{s}\",\"space_id\":\"{s}\",\"provider_id\":\"{s}\",\"status\":\"idle\"}}", .{ agent_id, space_id, provider_id }) catch return;
+        sendResult(client, id, resp);
+    }
+
+    fn rpcAgentUpdate(self: *Server, params: std.json.ObjectMap, id: ?std.json.Value, client: *Client) void {
+        const agent_id = getStr(params, "id") orelse {
+            sendError(client, id, -32602, "Missing id");
+            return;
+        };
+
+        self.db.updateAgent(
+            agent_id,
+            getStr(params, "status"),
+            getStr(params, "session_id"),
+            getStr(params, "prompt"),
+        ) catch |err| {
+            sendError(client, id, -32000, @errorName(err));
+            return;
+        };
+
+        sendResult(client, id, "true");
+    }
+
+    fn rpcAgentDelete(self: *Server, params: std.json.ObjectMap, id: ?std.json.Value, client: *Client) void {
+        const agent_id = getStr(params, "id") orelse return;
+        self.db.deleteAgent(agent_id) catch |err| {
+            sendError(client, id, -32000, @errorName(err));
+            return;
+        };
+        sendResult(client, id, "true");
+    }
+
+    fn rpcAgentList(self: *Server, params: std.json.ObjectMap, id: ?std.json.Value, client: *Client) void {
+        const space_id = getStr(params, "space_id") orelse {
+            sendError(client, id, -32602, "Missing space_id");
+            return;
+        };
+        const status_filter = getStr(params, "status");
+
+        const rows = self.db.listAgents(self.allocator, space_id, status_filter) catch {
+            sendResult(client, id, "[]");
+            return;
+        };
+        defer {
+            for (rows) |row| {
+                self.allocator.free(row.id);
+                self.allocator.free(row.space_id);
+                self.allocator.free(row.provider_id);
+                self.allocator.free(row.provider_name);
+                self.allocator.free(row.status);
+                if (row.session_id) |s| self.allocator.free(s);
+                if (row.assigned_task_id) |t| self.allocator.free(t);
+                if (row.prompt) |p| self.allocator.free(p);
+                if (row.node_id) |n| self.allocator.free(n);
+            }
+            self.allocator.free(rows);
+        }
+
+        var buf: [16384]u8 = undefined;
+        var fbs = std.io.fixedBufferStream(&buf);
+        const writer = fbs.writer();
+        writer.writeByte('[') catch return;
+        for (rows, 0..) |row, i| {
+            if (i > 0) writer.writeByte(',') catch return;
+            std.fmt.format(writer, "{{\"id\":\"{s}\",\"space_id\":\"{s}\",\"provider_id\":\"{s}\",\"provider_name\":\"{s}\",\"status\":\"{s}\"", .{ row.id, row.space_id, row.provider_id, row.provider_name, row.status }) catch return;
+            if (row.session_id) |s| {
+                std.fmt.format(writer, ",\"session_id\":\"{s}\"", .{s}) catch return;
+            }
+            if (row.assigned_task_id) |t| {
+                std.fmt.format(writer, ",\"assigned_task_id\":\"{s}\"", .{t}) catch return;
+            }
+            if (row.prompt) |p| {
+                // Escape quotes in prompt for JSON
+                writer.writeAll(",\"prompt\":\"") catch return;
+                for (p) |ch| {
+                    if (ch == '"') {
+                        writer.writeAll("\\\"") catch return;
+                    } else if (ch == '\\') {
+                        writer.writeAll("\\\\") catch return;
+                    } else if (ch == '\n') {
+                        writer.writeAll("\\n") catch return;
+                    } else {
+                        writer.writeByte(ch) catch return;
+                    }
+                }
+                writer.writeByte('"') catch return;
+            }
+            if (row.started_at) |s| {
+                std.fmt.format(writer, ",\"started_at\":{d}", .{s}) catch return;
+            }
+            std.fmt.format(writer, ",\"sort_order\":{d},\"created_at\":{d}}}", .{ row.sort_order, row.created_at }) catch return;
+        }
+        writer.writeByte(']') catch return;
+        sendResult(client, id, fbs.getWritten());
+    }
+
+    // -- Scheduler RPC handlers --
+
+    fn rpcSchedulerGetSettings(self: *Server, params: std.json.ObjectMap, id: ?std.json.Value, client: *Client) void {
+        const workspace_id = getStr(params, "workspace_id") orelse {
+            sendError(client, id, -32602, "Missing workspace_id");
+            return;
+        };
+
+        const settings = self.db.getSchedulerSettings(self.allocator, workspace_id) catch {
+            sendResult(client, id, "{\"concurrency\":4,\"auto_dispatch\":true,\"default_agent_id\":\"claude\"}");
+            return;
+        };
+
+        if (settings) |s| {
+            defer {
+                self.allocator.free(s.workspace_id);
+                self.allocator.free(s.default_agent_id);
+            }
+            var resp_buf: [256]u8 = undefined;
+            const resp = std.fmt.bufPrint(&resp_buf, "{{\"concurrency\":{d},\"auto_dispatch\":{s},\"default_agent_id\":\"{s}\"}}", .{ s.concurrency, if (s.auto_dispatch) "true" else "false", s.default_agent_id }) catch return;
+            sendResult(client, id, resp);
+        } else {
+            sendResult(client, id, "{\"concurrency\":4,\"auto_dispatch\":true,\"default_agent_id\":\"claude\"}");
+        }
+    }
+
+    fn rpcSchedulerSetSettings(self: *Server, params: std.json.ObjectMap, id: ?std.json.Value, client: *Client) void {
+        const workspace_id = getStr(params, "workspace_id") orelse {
+            sendError(client, id, -32602, "Missing workspace_id");
+            return;
+        };
+
+        const concurrency: i32 = if (params.get("concurrency")) |c| @intCast(c.integer) else 4;
+        const auto_dispatch = if (params.get("auto_dispatch")) |a| a == .bool and a.bool else true;
+        const default_agent_id = getStr(params, "default_agent_id") orelse "claude";
+
+        self.db.setSchedulerSettings(workspace_id, concurrency, auto_dispatch, default_agent_id) catch |err| {
+            sendError(client, id, -32000, @errorName(err));
+            return;
+        };
+
+        sendResult(client, id, "true");
+    }
+
+    fn rpcSchedulerInitPool(self: *Server, params: std.json.ObjectMap, id: ?std.json.Value, client: *Client) void {
+        const space_id = getStr(params, "space_id") orelse {
+            sendError(client, id, -32602, "Missing space_id");
+            return;
+        };
+        const concurrency: i32 = if (params.get("concurrency")) |c| @intCast(c.integer) else 4;
+        const provider_id = getStr(params, "provider_id") orelse "claude";
+        const provider_name = getStr(params, "provider_name") orelse "Claude Code";
+
+        // Create agent slots
+        var i: i32 = 1;
+        while (i <= concurrency) : (i += 1) {
+            var slot_buf: [32]u8 = undefined;
+            const slot_id = std.fmt.bufPrint(&slot_buf, "slot-{d}", .{i}) catch continue;
+            self.db.createAgent(slot_id, space_id, provider_id, provider_name) catch {};
+        }
+
+        sendResult(client, id, "true");
+    }
+
     fn rpcStateHydrate(self: *Server, id: ?std.json.Value, client: *Client) void {
         // Build complete state JSON with all workspaces, spaces, nodes
         var buf: [65536]u8 = undefined;
@@ -615,6 +987,79 @@ pub const Server = struct {
                         std.fmt.format(writer, ",\"agent_json\":{s}", .{aj}) catch return;
                     }
                     writer.writeByte('}') catch return;
+                }
+                writer.writeAll("],\"tasks\":[") catch return;
+
+                // Include tasks for this space
+                const tasks = self.db.listTasks(self.allocator, sp.id, null) catch &[_]db_mod.TaskRow{};
+                defer {
+                    for (tasks) |task| {
+                        self.allocator.free(task.id);
+                        self.allocator.free(task.space_id);
+                        if (task.parent_task_id) |p| self.allocator.free(p);
+                        self.allocator.free(task.title);
+                        self.allocator.free(task.description);
+                        self.allocator.free(task.status);
+                        self.allocator.free(task.priority);
+                        self.allocator.free(task.queue_status);
+                        if (task.assigned_agent_id) |a| self.allocator.free(a);
+                        if (task.node_id) |n| self.allocator.free(n);
+                    }
+                    self.allocator.free(tasks);
+                }
+
+                for (tasks, 0..) |task, ti| {
+                    if (ti > 0) writer.writeByte(',') catch return;
+                    std.fmt.format(writer, "{{\"id\":\"{s}\",\"space_id\":\"{s}\",\"title\":\"{s}\",\"description\":\"{s}\",\"status\":\"{s}\",\"priority\":\"{s}\",\"queue_status\":\"{s}\"", .{ task.id, task.space_id, task.title, task.description, task.status, task.priority, task.queue_status }) catch return;
+                    if (task.parent_task_id) |p| {
+                        std.fmt.format(writer, ",\"parent_task_id\":\"{s}\"", .{p}) catch return;
+                    }
+                    if (task.assigned_agent_id) |a| {
+                        std.fmt.format(writer, ",\"assigned_agent_id\":\"{s}\"", .{a}) catch return;
+                    }
+                    if (task.queued_at) |q| {
+                        std.fmt.format(writer, ",\"queued_at\":{d}", .{q}) catch return;
+                    }
+                    if (task.dispatched_at) |d| {
+                        std.fmt.format(writer, ",\"dispatched_at\":{d}", .{d}) catch return;
+                    }
+                    if (task.completed_at) |co| {
+                        std.fmt.format(writer, ",\"completed_at\":{d}", .{co}) catch return;
+                    }
+                    std.fmt.format(writer, ",\"created_at\":{d}}}", .{task.created_at}) catch return;
+                }
+                writer.writeAll("],\"agents\":[") catch return;
+
+                // Include agents for this space
+                const agents = self.db.listAgents(self.allocator, sp.id, null) catch &[_]db_mod.AgentRow{};
+                defer {
+                    for (agents) |agent| {
+                        self.allocator.free(agent.id);
+                        self.allocator.free(agent.space_id);
+                        self.allocator.free(agent.provider_id);
+                        self.allocator.free(agent.provider_name);
+                        self.allocator.free(agent.status);
+                        if (agent.session_id) |s| self.allocator.free(s);
+                        if (agent.assigned_task_id) |t| self.allocator.free(t);
+                        if (agent.prompt) |p| self.allocator.free(p);
+                        if (agent.node_id) |n| self.allocator.free(n);
+                    }
+                    self.allocator.free(agents);
+                }
+
+                for (agents, 0..) |agent, ai| {
+                    if (ai > 0) writer.writeByte(',') catch return;
+                    std.fmt.format(writer, "{{\"id\":\"{s}\",\"space_id\":\"{s}\",\"provider_id\":\"{s}\",\"provider_name\":\"{s}\",\"status\":\"{s}\"", .{ agent.id, agent.space_id, agent.provider_id, agent.provider_name, agent.status }) catch return;
+                    if (agent.session_id) |s| {
+                        std.fmt.format(writer, ",\"session_id\":\"{s}\"", .{s}) catch return;
+                    }
+                    if (agent.assigned_task_id) |t| {
+                        std.fmt.format(writer, ",\"assigned_task_id\":\"{s}\"", .{t}) catch return;
+                    }
+                    if (agent.started_at) |s| {
+                        std.fmt.format(writer, ",\"started_at\":{d}", .{s}) catch return;
+                    }
+                    std.fmt.format(writer, ",\"created_at\":{d}}}", .{agent.created_at}) catch return;
                 }
                 writer.writeAll("]}") catch return;
             }

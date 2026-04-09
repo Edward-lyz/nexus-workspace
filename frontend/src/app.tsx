@@ -5,16 +5,22 @@ import { StatusBar } from './components/StatusBar';
 import { AgentDialog } from './components/AgentDialog';
 import { TaskDialog } from './components/TaskDialog';
 import { NoteDialog } from './components/NoteDialog';
+import { SettingsDialog } from './components/SettingsDialog';
+import { ExecutionHistoryDialog } from './components/ExecutionHistoryDialog';
 import { ContextMenu, MenuItem } from './components/ContextMenu';
 import { NotificationBanner, showNotificationBanner } from './components/NotificationBanner';
+import { ExpandedPane } from './components/ExpandedPane';
+import { PopoutContainer } from './components/PopoutPane';
 import { terminalRegistry } from './components/TerminalPane';
 import {
   ipc, hydrateState, markSessionExited, updatePane,
   activeSpace, focusedPaneId, panes, deletePane,
+  initializeAgentPool, schedulerSettings, detectPlanMode,
+  loadCustomAgents, loadExecutionHistory,
 } from './store';
 import type { SpaceState } from './store';
 
-type DialogKind = 'agent' | 'task' | 'note' | null;
+type DialogKind = 'agent' | 'task' | 'note' | 'settings' | 'history' | null;
 
 interface ContextMenuState {
   x: number;
@@ -39,6 +45,9 @@ export function App() {
     (async () => {
       await ipc.connect();
 
+      // Initialize agent pool with configured concurrency
+      initializeAgentPool(schedulerSettings.peek().concurrency);
+
       ipc.on('pty.data', (params) => {
         const { session_id, data } = params as { session_id: string; data: string };
         const term = terminalRegistry.get(session_id);
@@ -48,6 +57,9 @@ export function App() {
           for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
           term.write(bytes);
         }
+        // Detect plan mode transitions
+        const decoded = atob(data);
+        detectPlanMode(session_id, decoded);
       });
 
       ipc.on('pty.exit', (params) => {
@@ -68,6 +80,8 @@ export function App() {
       });
 
       hydrateState();
+      loadCustomAgents();
+      loadExecutionHistory();
     })();
   }, []);
 
@@ -78,6 +92,8 @@ export function App() {
       if (meta && e.key === 't') { e.preventDefault(); openDialog('task'); return; }
       if (meta && e.key === 'k') { e.preventDefault(); openDialog('agent'); return; }
       if (meta && e.key === 'j') { e.preventDefault(); openDialog('note'); return; }
+      if (meta && e.key === ',') { e.preventDefault(); setDialog('settings'); return; }
+      if (meta && e.key === 'h') { e.preventDefault(); setDialog('history'); return; }
       if (meta && e.key === 'w') {
         e.preventDefault();
         if (focusedPaneId.value) deletePane(focusedPaneId.value);
@@ -152,9 +168,13 @@ export function App() {
         <TilingGrid />
       </div>
       <StatusBar />
+      <PopoutContainer />
+      <ExpandedPane />
       {dialog === 'agent' && dialogSpace && <AgentDialog space={dialogSpace} onClose={closeDialog} />}
       {dialog === 'task' && <TaskDialog onClose={closeDialog} />}
       {dialog === 'note' && <NoteDialog onClose={closeDialog} />}
+      {dialog === 'settings' && <SettingsDialog onClose={closeDialog} />}
+      {dialog === 'history' && <ExecutionHistoryDialog onClose={closeDialog} />}
       {contextMenu && (
         <ContextMenu
           x={contextMenu.x}

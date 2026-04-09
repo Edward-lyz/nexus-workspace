@@ -3,7 +3,8 @@ import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { SerializeAddon } from '@xterm/addon-serialize';
 import '@xterm/xterm/css/xterm.css';
-import { ipc, focusedPaneId, focusPane, deletePane, BUILTIN_AGENTS, cloneAgentToAgent } from '../store';
+import { ipc, focusedPaneId, focusPane, deletePane, BUILTIN_AGENTS, cloneAgentToAgent, expandPane, popoutPane, detectPlanMode } from '../store';
+import { PlanModeOverlay } from './PlanModeOverlay';
 import type { PaneState } from '../store';
 
 
@@ -143,6 +144,20 @@ export function TerminalPane({ pane }: Props) {
               </div>
             )
           )}
+          {!pane.embedded && (
+            <>
+              <button class="btn-popout" onClick={(e) => { e.stopPropagation(); popoutPane(pane.id); }} title="Pop out to window">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>
+                </svg>
+              </button>
+              <button class="btn-expand" onClick={(e) => { e.stopPropagation(); expandPane(pane.id); }} title="Expand panel">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>
+                </svg>
+              </button>
+            </>
+          )}
           <span class={dotClass} />
           <button
             class="btn-close"
@@ -153,6 +168,7 @@ export function TerminalPane({ pane }: Props) {
         </span>
       </div>
       <div class="pane-body" ref={bodyRef} />
+      {pane.planMode && <PlanModeOverlay pane={pane} />}
     </div>
   );
 }

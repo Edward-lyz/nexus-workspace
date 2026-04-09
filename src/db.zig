@@ -76,6 +76,137 @@ pub const Db = struct {
             );
             self.setUserVersion(1);
         }
+
+        if (version < 2) {
+            // v2: Dedicated tasks and agents tables with bidirectional linking
+            try self.execMulti(
+                \\CREATE TABLE IF NOT EXISTS tasks (
+                \\  id TEXT PRIMARY KEY,
+                \\  space_id TEXT NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
+                \\  parent_task_id TEXT REFERENCES tasks(id) ON DELETE CASCADE,
+                \\  title TEXT NOT NULL DEFAULT '',
+                \\  description TEXT NOT NULL DEFAULT '',
+                \\  status TEXT NOT NULL DEFAULT 'todo',
+                \\  priority TEXT NOT NULL DEFAULT 'medium',
+                \\  queue_status TEXT NOT NULL DEFAULT 'none',
+                \\  queued_at INTEGER,
+                \\  dispatched_at INTEGER,
+                \\  completed_at INTEGER,
+                \\  assigned_agent_id TEXT,
+                \\  node_id TEXT,
+                \\  sort_order INTEGER NOT NULL DEFAULT 0,
+                \\  created_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
+                \\);
+                \\CREATE INDEX IF NOT EXISTS idx_tasks_space ON tasks(space_id);
+                \\CREATE INDEX IF NOT EXISTS idx_tasks_parent ON tasks(parent_task_id);
+                \\CREATE INDEX IF NOT EXISTS idx_tasks_queue ON tasks(queue_status);
+                \\
+                \\CREATE TABLE IF NOT EXISTS agents (
+                \\  id TEXT PRIMARY KEY,
+                \\  space_id TEXT NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
+                \\  provider_id TEXT NOT NULL DEFAULT 'claude',
+                \\  provider_name TEXT NOT NULL DEFAULT 'Claude Code',
+                \\  status TEXT NOT NULL DEFAULT 'idle',
+                \\  session_id TEXT,
+                \\  assigned_task_id TEXT,
+                \\  prompt TEXT,
+                \\  started_at INTEGER,
+                \\  node_id TEXT,
+                \\  sort_order INTEGER NOT NULL DEFAULT 0,
+                \\  created_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
+                \\);
+                \\CREATE INDEX IF NOT EXISTS idx_agents_space ON agents(space_id);
+                \\CREATE INDEX IF NOT EXISTS idx_agents_status ON agents(status);
+                \\
+                \\CREATE TABLE IF NOT EXISTS scheduler_settings (
+                \\  workspace_id TEXT PRIMARY KEY,
+                \\  concurrency INTEGER NOT NULL DEFAULT 4,
+                \\  auto_dispatch INTEGER NOT NULL DEFAULT 1,
+                \\  default_agent_id TEXT NOT NULL DEFAULT 'claude'
+                \\);
+            );
+
+            // Add linking columns to nodes (SQLite ignores errors for existing columns)
+            _ = c.sqlite3_exec(self.handle, "ALTER TABLE nodes ADD COLUMN task_id TEXT", null, null, null);
+            _ = c.sqlite3_exec(self.handle, "ALTER TABLE nodes ADD COLUMN agent_id TEXT", null, null, null);
+            _ = c.sqlite3_exec(self.handle, "ALTER TABLE nodes ADD COLUMN linked_node_id TEXT", null, null, null);
+
+            // Migrate existing task_json/agent_json to new tables
+            self.migrateJsonToTables();
+
+            self.setUserVersion(2);
+        }
+    }
+
+    fn migrateJsonToTables(self: *Db) void {
+        // Migrate task_json from nodes to tasks table
+        var task_stmt: ?*c.sqlite3_stmt = null;
+        if (c.sqlite3_prepare_v2(self.handle, "SELECT id, space_id, task_json FROM nodes WHERE task_json IS NOT NULL AND task_json != ''", -1, &task_stmt, null) == c.SQLITE_OK) {
+            defer _ = c.sqlite3_finalize(task_stmt);
+
+            while (c.sqlite3_step(task_stmt.?) == c.SQLITE_ROW) {
+                const node_id = dupeColumnText(self.allocator, task_stmt.?, 0) catch continue;
+                defer self.allocator.free(node_id);
+                const space_id = dupeColumnText(self.allocator, task_stmt.?, 1) catch continue;
+                defer self.allocator.free(space_id);
+                const task_json_str = dupeColumnText(self.allocator, task_stmt.?, 2) catch continue;
+                defer self.allocator.free(task_json_str);
+
+                // Parse JSON and extract fields
+                const parsed = std.json.parseFromSlice(std.json.Value, self.allocator, task_json_str, .{}) catch continue;
+                defer parsed.deinit();
+                const obj = parsed.value.object;
+
+                const title = if (obj.get("title")) |v| (if (v == .string) v.string else "") else "";
+                const description = if (obj.get("description")) |v| (if (v == .string) v.string else "") else "";
+                const status = if (obj.get("status")) |v| (if (v == .string) v.string else "todo") else "todo";
+                const priority = if (obj.get("priority")) |v| (if (v == .string) v.string else "medium") else "medium";
+
+                const task_id = std.fmt.allocPrint(self.allocator, "task-m-{s}", .{node_id}) catch continue;
+                defer self.allocator.free(task_id);
+
+                self.execBind(
+                    "INSERT OR IGNORE INTO tasks (id, space_id, title, description, status, priority, node_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                    .{ task_id, space_id, title, description, status, priority, node_id },
+                ) catch continue;
+
+                self.execBind("UPDATE nodes SET task_id = ?1 WHERE id = ?2", .{ task_id, node_id }) catch {};
+            }
+        }
+
+        // Migrate agent_json from nodes to agents table
+        var agent_stmt: ?*c.sqlite3_stmt = null;
+        if (c.sqlite3_prepare_v2(self.handle, "SELECT id, space_id, agent_json FROM nodes WHERE agent_json IS NOT NULL AND agent_json != ''", -1, &agent_stmt, null) == c.SQLITE_OK) {
+            defer _ = c.sqlite3_finalize(agent_stmt);
+
+            while (c.sqlite3_step(agent_stmt.?) == c.SQLITE_ROW) {
+                const node_id = dupeColumnText(self.allocator, agent_stmt.?, 0) catch continue;
+                defer self.allocator.free(node_id);
+                const space_id = dupeColumnText(self.allocator, agent_stmt.?, 1) catch continue;
+                defer self.allocator.free(space_id);
+                const agent_json_str = dupeColumnText(self.allocator, agent_stmt.?, 2) catch continue;
+                defer self.allocator.free(agent_json_str);
+
+                const parsed = std.json.parseFromSlice(std.json.Value, self.allocator, agent_json_str, .{}) catch continue;
+                defer parsed.deinit();
+                const obj = parsed.value.object;
+
+                const provider_id = if (obj.get("providerId")) |v| (if (v == .string) v.string else "claude") else "claude";
+                const provider_name = if (obj.get("providerName")) |v| (if (v == .string) v.string else "Claude Code") else "Claude Code";
+                const prompt = if (obj.get("prompt")) |v| (if (v == .string) v.string else "") else "";
+                const status = if (obj.get("status")) |v| (if (v == .string) v.string else "exited") else "exited";
+
+                const agent_id = std.fmt.allocPrint(self.allocator, "agent-m-{s}", .{node_id}) catch continue;
+                defer self.allocator.free(agent_id);
+
+                self.execBind(
+                    "INSERT OR IGNORE INTO agents (id, space_id, provider_id, provider_name, prompt, status, node_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                    .{ agent_id, space_id, provider_id, provider_name, prompt, status, node_id },
+                ) catch continue;
+
+                self.execBind("UPDATE nodes SET agent_id = ?1 WHERE id = ?2", .{ agent_id, node_id }) catch {};
+            }
+        }
     }
 
     fn getUserVersion(self: *Db) i32 {
@@ -296,6 +427,263 @@ pub const Db = struct {
         );
     }
 
+    // -- Task CRUD --
+
+    pub fn createTask(
+        self: *Db,
+        id: []const u8,
+        space_id: []const u8,
+        title: []const u8,
+        description: []const u8,
+        priority: []const u8,
+        parent_task_id: ?[]const u8,
+    ) !void {
+        try self.execBind(
+            "INSERT INTO tasks (id, space_id, title, description, priority, parent_task_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            .{ id, space_id, title, description, priority, parent_task_id },
+        );
+    }
+
+    pub fn updateTask(
+        self: *Db,
+        id: []const u8,
+        title: ?[]const u8,
+        description: ?[]const u8,
+        status: ?[]const u8,
+        priority: ?[]const u8,
+        queue_status: ?[]const u8,
+    ) !void {
+        // Build dynamic UPDATE statement
+        if (title) |t| {
+            try self.execBind("UPDATE tasks SET title = ?2 WHERE id = ?1", .{ id, t });
+        }
+        if (description) |d| {
+            try self.execBind("UPDATE tasks SET description = ?2 WHERE id = ?1", .{ id, d });
+        }
+        if (status) |s| {
+            try self.execBind("UPDATE tasks SET status = ?2 WHERE id = ?1", .{ id, s });
+        }
+        if (priority) |p| {
+            try self.execBind("UPDATE tasks SET priority = ?2 WHERE id = ?1", .{ id, p });
+        }
+        if (queue_status) |q| {
+            try self.execBind("UPDATE tasks SET queue_status = ?2 WHERE id = ?1", .{ id, q });
+        }
+    }
+
+    pub fn deleteTask(self: *Db, id: []const u8) !void {
+        try self.execBind("DELETE FROM tasks WHERE id = ?1", .{id});
+    }
+
+    pub fn listTasks(self: *Db, allocator: Allocator, space_id: []const u8, parent_task_id: ?[]const u8) ![]TaskRow {
+        var stmt: ?*c.sqlite3_stmt = null;
+        if (parent_task_id) |pid| {
+            if (c.sqlite3_prepare_v2(self.handle, "SELECT id, space_id, parent_task_id, title, description, status, priority, queue_status, queued_at, dispatched_at, completed_at, assigned_agent_id, node_id, sort_order, created_at FROM tasks WHERE space_id = ?1 AND parent_task_id = ?2 ORDER BY sort_order", -1, &stmt, null) != c.SQLITE_OK) return &.{};
+            bindText(stmt.?, 1, space_id);
+            bindText(stmt.?, 2, pid);
+        } else {
+            if (c.sqlite3_prepare_v2(self.handle, "SELECT id, space_id, parent_task_id, title, description, status, priority, queue_status, queued_at, dispatched_at, completed_at, assigned_agent_id, node_id, sort_order, created_at FROM tasks WHERE space_id = ?1 AND parent_task_id IS NULL ORDER BY sort_order", -1, &stmt, null) != c.SQLITE_OK) return &.{};
+            bindText(stmt.?, 1, space_id);
+        }
+        defer _ = c.sqlite3_finalize(stmt);
+
+        var list: std.ArrayList(TaskRow) = .empty;
+        while (c.sqlite3_step(stmt.?) == c.SQLITE_ROW) {
+            const row = TaskRow{
+                .id = dupeColumnText(allocator, stmt.?, 0) catch continue,
+                .space_id = dupeColumnText(allocator, stmt.?, 1) catch continue,
+                .parent_task_id = dupeColumnTextOpt(allocator, stmt.?, 2),
+                .title = dupeColumnText(allocator, stmt.?, 3) catch continue,
+                .description = dupeColumnText(allocator, stmt.?, 4) catch continue,
+                .status = dupeColumnText(allocator, stmt.?, 5) catch continue,
+                .priority = dupeColumnText(allocator, stmt.?, 6) catch continue,
+                .queue_status = dupeColumnText(allocator, stmt.?, 7) catch continue,
+                .queued_at = if (c.sqlite3_column_type(stmt.?, 8) != c.SQLITE_NULL) c.sqlite3_column_int64(stmt.?, 8) else null,
+                .dispatched_at = if (c.sqlite3_column_type(stmt.?, 9) != c.SQLITE_NULL) c.sqlite3_column_int64(stmt.?, 9) else null,
+                .completed_at = if (c.sqlite3_column_type(stmt.?, 10) != c.SQLITE_NULL) c.sqlite3_column_int64(stmt.?, 10) else null,
+                .assigned_agent_id = dupeColumnTextOpt(allocator, stmt.?, 11),
+                .node_id = dupeColumnTextOpt(allocator, stmt.?, 12),
+                .sort_order = c.sqlite3_column_int(stmt.?, 13),
+                .created_at = c.sqlite3_column_int64(stmt.?, 14),
+            };
+            list.append(allocator, row) catch break;
+        }
+        return list.toOwnedSlice(allocator) catch &.{};
+    }
+
+    pub fn enqueueTask(self: *Db, id: []const u8) !void {
+        try self.execBind(
+            "UPDATE tasks SET queue_status = 'queued', queued_at = strftime('%s','now') WHERE id = ?1",
+            .{id},
+        );
+    }
+
+    pub fn assignTaskToAgent(self: *Db, task_id: []const u8, agent_id: []const u8) !void {
+        // Begin transaction
+        _ = c.sqlite3_exec(self.handle, "BEGIN TRANSACTION", null, null, null);
+        errdefer _ = c.sqlite3_exec(self.handle, "ROLLBACK", null, null, null);
+
+        // Update task
+        try self.execBind(
+            "UPDATE tasks SET assigned_agent_id = ?2, queue_status = 'dispatched', dispatched_at = strftime('%s','now'), status = 'doing' WHERE id = ?1",
+            .{ task_id, agent_id },
+        );
+
+        // Update agent
+        try self.execBind(
+            "UPDATE agents SET assigned_task_id = ?2, status = 'running', started_at = strftime('%s','now') WHERE id = ?1",
+            .{ agent_id, task_id },
+        );
+
+        _ = c.sqlite3_exec(self.handle, "COMMIT", null, null, null);
+    }
+
+    pub fn unassignTask(self: *Db, task_id: []const u8) !void {
+        // Get assigned agent first
+        var stmt: ?*c.sqlite3_stmt = null;
+        if (c.sqlite3_prepare_v2(self.handle, "SELECT assigned_agent_id FROM tasks WHERE id = ?1", -1, &stmt, null) != c.SQLITE_OK) return;
+        defer _ = c.sqlite3_finalize(stmt);
+        bindText(stmt.?, 1, task_id);
+
+        var agent_id: ?[]const u8 = null;
+        if (c.sqlite3_step(stmt.?) == c.SQLITE_ROW) {
+            agent_id = dupeColumnTextOpt(self.allocator, stmt.?, 0);
+        }
+        defer if (agent_id) |a| self.allocator.free(a);
+
+        // Begin transaction
+        _ = c.sqlite3_exec(self.handle, "BEGIN TRANSACTION", null, null, null);
+        errdefer _ = c.sqlite3_exec(self.handle, "ROLLBACK", null, null, null);
+
+        // Clear task assignment
+        try self.execBind(
+            "UPDATE tasks SET assigned_agent_id = NULL, queue_status = 'completed', completed_at = strftime('%s','now'), status = 'done' WHERE id = ?1",
+            .{task_id},
+        );
+
+        // Clear agent assignment
+        if (agent_id) |aid| {
+            try self.execBind(
+                "UPDATE agents SET assigned_task_id = NULL, status = 'idle' WHERE id = ?1",
+                .{aid},
+            );
+        }
+
+        _ = c.sqlite3_exec(self.handle, "COMMIT", null, null, null);
+    }
+
+    // -- Agent CRUD --
+
+    pub fn createAgent(
+        self: *Db,
+        id: []const u8,
+        space_id: []const u8,
+        provider_id: []const u8,
+        provider_name: []const u8,
+    ) !void {
+        try self.execBind(
+            "INSERT INTO agents (id, space_id, provider_id, provider_name) VALUES (?1, ?2, ?3, ?4)",
+            .{ id, space_id, provider_id, provider_name },
+        );
+    }
+
+    pub fn updateAgent(
+        self: *Db,
+        id: []const u8,
+        status: ?[]const u8,
+        session_id: ?[]const u8,
+        prompt: ?[]const u8,
+    ) !void {
+        if (status) |s| {
+            try self.execBind("UPDATE agents SET status = ?2 WHERE id = ?1", .{ id, s });
+        }
+        if (session_id) |sid| {
+            try self.execBind("UPDATE agents SET session_id = ?2 WHERE id = ?1", .{ id, sid });
+        }
+        if (prompt) |p| {
+            try self.execBind("UPDATE agents SET prompt = ?2 WHERE id = ?1", .{ id, p });
+        }
+    }
+
+    pub fn deleteAgent(self: *Db, id: []const u8) !void {
+        try self.execBind("DELETE FROM agents WHERE id = ?1", .{id});
+    }
+
+    pub fn listAgents(self: *Db, allocator: Allocator, space_id: []const u8, status_filter: ?[]const u8) ![]AgentRow {
+        var stmt: ?*c.sqlite3_stmt = null;
+        if (status_filter) |sf| {
+            if (c.sqlite3_prepare_v2(self.handle, "SELECT id, space_id, provider_id, provider_name, status, session_id, assigned_task_id, prompt, started_at, node_id, sort_order, created_at FROM agents WHERE space_id = ?1 AND status = ?2 ORDER BY sort_order", -1, &stmt, null) != c.SQLITE_OK) return &.{};
+            bindText(stmt.?, 1, space_id);
+            bindText(stmt.?, 2, sf);
+        } else {
+            if (c.sqlite3_prepare_v2(self.handle, "SELECT id, space_id, provider_id, provider_name, status, session_id, assigned_task_id, prompt, started_at, node_id, sort_order, created_at FROM agents WHERE space_id = ?1 ORDER BY sort_order", -1, &stmt, null) != c.SQLITE_OK) return &.{};
+            bindText(stmt.?, 1, space_id);
+        }
+        defer _ = c.sqlite3_finalize(stmt);
+
+        var list: std.ArrayList(AgentRow) = .empty;
+        while (c.sqlite3_step(stmt.?) == c.SQLITE_ROW) {
+            const row = AgentRow{
+                .id = dupeColumnText(allocator, stmt.?, 0) catch continue,
+                .space_id = dupeColumnText(allocator, stmt.?, 1) catch continue,
+                .provider_id = dupeColumnText(allocator, stmt.?, 2) catch continue,
+                .provider_name = dupeColumnText(allocator, stmt.?, 3) catch continue,
+                .status = dupeColumnText(allocator, stmt.?, 4) catch continue,
+                .session_id = dupeColumnTextOpt(allocator, stmt.?, 5),
+                .assigned_task_id = dupeColumnTextOpt(allocator, stmt.?, 6),
+                .prompt = dupeColumnTextOpt(allocator, stmt.?, 7),
+                .started_at = if (c.sqlite3_column_type(stmt.?, 8) != c.SQLITE_NULL) c.sqlite3_column_int64(stmt.?, 8) else null,
+                .node_id = dupeColumnTextOpt(allocator, stmt.?, 9),
+                .sort_order = c.sqlite3_column_int(stmt.?, 10),
+                .created_at = c.sqlite3_column_int64(stmt.?, 11),
+            };
+            list.append(allocator, row) catch break;
+        }
+        return list.toOwnedSlice(allocator) catch &.{};
+    }
+
+    // -- Scheduler Settings --
+
+    pub fn getSchedulerSettings(self: *Db, allocator: Allocator, workspace_id: []const u8) !?SchedulerSettingsRow {
+        var stmt: ?*c.sqlite3_stmt = null;
+        if (c.sqlite3_prepare_v2(self.handle, "SELECT workspace_id, concurrency, auto_dispatch, default_agent_id FROM scheduler_settings WHERE workspace_id = ?1", -1, &stmt, null) != c.SQLITE_OK) return null;
+        defer _ = c.sqlite3_finalize(stmt);
+        bindText(stmt.?, 1, workspace_id);
+
+        if (c.sqlite3_step(stmt.?) == c.SQLITE_ROW) {
+            return SchedulerSettingsRow{
+                .workspace_id = dupeColumnText(allocator, stmt.?, 0) catch return null,
+                .concurrency = c.sqlite3_column_int(stmt.?, 1),
+                .auto_dispatch = c.sqlite3_column_int(stmt.?, 2) != 0,
+                .default_agent_id = dupeColumnText(allocator, stmt.?, 3) catch return null,
+            };
+        }
+        return null;
+    }
+
+    pub fn setSchedulerSettings(
+        self: *Db,
+        workspace_id: []const u8,
+        concurrency: i32,
+        auto_dispatch: bool,
+        default_agent_id: []const u8,
+    ) !void {
+        var stmt: ?*c.sqlite3_stmt = null;
+        if (c.sqlite3_prepare_v2(self.handle, "INSERT OR REPLACE INTO scheduler_settings (workspace_id, concurrency, auto_dispatch, default_agent_id) VALUES (?1, ?2, ?3, ?4)", -1, &stmt, null) != c.SQLITE_OK) {
+            return error.SqlitePrepareFailed;
+        }
+        defer _ = c.sqlite3_finalize(stmt);
+
+        bindText(stmt.?, 1, workspace_id);
+        _ = c.sqlite3_bind_int(stmt.?, 2, concurrency);
+        _ = c.sqlite3_bind_int(stmt.?, 3, if (auto_dispatch) @as(c_int, 1) else @as(c_int, 0));
+        bindText(stmt.?, 4, default_agent_id);
+
+        if (c.sqlite3_step(stmt.?) != c.SQLITE_DONE) {
+            return error.SqliteStepFailed;
+        }
+    }
+
     // -- Helpers --
 
     fn execMulti(self: *Db, sql: [*:0]const u8) !void {
@@ -389,6 +777,46 @@ pub const NodeRow = struct {
     agent_json: ?[]const u8,
     task_json: ?[]const u8,
     sort_order: i32,
+};
+
+pub const TaskRow = struct {
+    id: []const u8,
+    space_id: []const u8,
+    parent_task_id: ?[]const u8,
+    title: []const u8,
+    description: []const u8,
+    status: []const u8,
+    priority: []const u8,
+    queue_status: []const u8,
+    queued_at: ?i64,
+    dispatched_at: ?i64,
+    completed_at: ?i64,
+    assigned_agent_id: ?[]const u8,
+    node_id: ?[]const u8,
+    sort_order: i32,
+    created_at: i64,
+};
+
+pub const AgentRow = struct {
+    id: []const u8,
+    space_id: []const u8,
+    provider_id: []const u8,
+    provider_name: []const u8,
+    status: []const u8,
+    session_id: ?[]const u8,
+    assigned_task_id: ?[]const u8,
+    prompt: ?[]const u8,
+    started_at: ?i64,
+    node_id: ?[]const u8,
+    sort_order: i32,
+    created_at: i64,
+};
+
+pub const SchedulerSettingsRow = struct {
+    workspace_id: []const u8,
+    concurrency: i32,
+    auto_dispatch: bool,
+    default_agent_id: []const u8,
 };
 
 // -- Low-level helpers --

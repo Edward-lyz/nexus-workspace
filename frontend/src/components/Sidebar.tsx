@@ -5,8 +5,9 @@ import {
   editingNoteId, updateNote, deleteNote,
   exportWorkspace, importWorkspace, currentWorkspaceId,
   workspacePath, setWorkspacePath, ipc,
+  activeSpaceRootTasks, getSubtasks, tasks,
 } from '../store';
-import type { SpaceState } from '../store';
+import type { SpaceState, TaskEntity } from '../store';
 
 interface Props {
   onAddAgent: (space: SpaceState) => void;
@@ -27,7 +28,6 @@ export function Sidebar({ onAddAgent, onAddTask, onAddNote }: Props) {
   const [pathInput, setPathInput] = useState('');
   const importInputRef = useRef<HTMLInputElement>(null);
 
-  const tasks = currentPanes.filter(p => p.kind === 'task');
   const terminals = currentPanes.filter(p => (p.kind === 'shell' || p.kind === 'agent') && !p.embedded);
 
   function toggleTheme() {
@@ -204,18 +204,10 @@ export function Sidebar({ onAddAgent, onAddTask, onAddNote }: Props) {
             <button class="sidebar-btn note" onClick={() => onAddNote(activeSpaceVal)}>+ Note</button>
           </div>
 
-          {/* Tasks */}
-          {tasks.length > 0 && (
+          {/* Tasks - Tree View */}
+          {tasks.value.size > 0 && (
             <SidebarGroup title="Tasks">
-              {tasks.map(p => (
-                <div key={p.id} class="sidebar-item session-item" onClick={() => focusPane(p.id)}>
-                  <div class="session-row">
-                    <span class="status-dot-sm" data-status={p.taskStatus ?? 'todo'} />
-                    <span class="sidebar-item-label">{p.taskTitle}</span>
-                  </div>
-                  <button class="sidebar-delete" onClick={(e) => { e.stopPropagation(); deletePane(p.id); }}>x</button>
-                </div>
-              ))}
+              <TaskTreeView />
             </SidebarGroup>
           )}
 
@@ -278,6 +270,90 @@ function SidebarGroup({ title, children }: { title: string; children: any }) {
     <div class="sidebar-group">
       <div class="sidebar-section-title">{title}</div>
       <div class="sidebar-list">{children}</div>
+    </div>
+  );
+}
+
+// Task Tree View Component
+function TaskTreeView() {
+  const rootTasks = activeSpaceRootTasks.value;
+
+  if (rootTasks.length === 0) {
+    return <div class="sidebar-empty">No tasks yet</div>;
+  }
+
+  return (
+    <div class="task-tree">
+      {rootTasks.map(task => (
+        <TaskTreeNode key={task.id} task={task} depth={0} />
+      ))}
+    </div>
+  );
+}
+
+interface TaskTreeNodeProps {
+  task: TaskEntity;
+  depth: number;
+}
+
+function TaskTreeNode({ task, depth }: TaskTreeNodeProps) {
+  const [expanded, setExpanded] = useState(true);
+  const subtasks = getSubtasks(task.id);
+  const hasChildren = subtasks.length > 0;
+  const pane = panes.value.find(p => p.id === task.id);
+
+  const handleClick = () => {
+    if (pane) focusPane(pane.id);
+  };
+
+  const handleToggle = (e: MouseEvent) => {
+    e.stopPropagation();
+    setExpanded(!expanded);
+  };
+
+  return (
+    <div class="task-tree-node">
+      <div
+        class="task-tree-item"
+        style={{ paddingLeft: `${depth * 16 + 8}px` }}
+        onClick={handleClick}
+      >
+        {hasChildren ? (
+          <button class="task-tree-toggle" onClick={handleToggle}>
+            <svg
+              width="10"
+              height="10"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              style={{ transform: expanded ? 'rotate(90deg)' : 'rotate(0deg)' }}
+            >
+              <polyline points="9 18 15 12 9 6" />
+            </svg>
+          </button>
+        ) : (
+          <span class="task-tree-spacer" />
+        )}
+        <span class="status-dot-sm" data-status={task.status} />
+        <span class="task-tree-title">{task.title || 'Untitled'}</span>
+        {hasChildren && (
+          <span class="task-tree-count">{subtasks.length}</span>
+        )}
+        <button
+          class="sidebar-delete"
+          onClick={(e) => { e.stopPropagation(); if (pane) deletePane(pane.id); }}
+        >
+          x
+        </button>
+      </div>
+      {hasChildren && expanded && (
+        <div class="task-tree-children">
+          {subtasks.map(child => (
+            <TaskTreeNode key={child.id} task={child} depth={depth + 1} />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
