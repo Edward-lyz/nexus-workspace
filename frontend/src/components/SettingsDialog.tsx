@@ -246,6 +246,14 @@ export function SettingsDialog({ onClose }: Props) {
               <span class="shortcut-label">Settings</span>
               <kbd class="shortcut-key">Cmd+,</kbd>
             </div>
+            <div class="shortcut-row">
+              <span class="shortcut-label">History</span>
+              <kbd class="shortcut-key">Cmd+H</kbd>
+            </div>
+            <div class="shortcut-row">
+              <span class="shortcut-label">Popout Pane</span>
+              <kbd class="shortcut-key">Cmd+E</kbd>
+            </div>
           </div>
         </div>
 

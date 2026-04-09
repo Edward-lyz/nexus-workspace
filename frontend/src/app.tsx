@@ -16,7 +16,7 @@ import {
   ipc, hydrateState, markSessionExited, updatePane,
   activeSpace, focusedPaneId, panes, deletePane,
   initializeAgentPool, schedulerSettings, detectPlanMode,
-  loadCustomAgents, loadExecutionHistory,
+  loadCustomAgents, loadExecutionHistory, popoutPane,
 } from './store';
 import type { SpaceState } from './store';
 
@@ -94,6 +94,11 @@ export function App() {
       if (meta && e.key === 'j') { e.preventDefault(); openDialog('note'); return; }
       if (meta && e.key === ',') { e.preventDefault(); setDialog('settings'); return; }
       if (meta && e.key === 'h') { e.preventDefault(); setDialog('history'); return; }
+      if (meta && e.key === 'e') {
+        e.preventDefault();
+        if (focusedPaneId.value) popoutPane(focusedPaneId.value);
+        return;
+      }
       if (meta && e.key === 'w') {
         e.preventDefault();
         if (focusedPaneId.value) deletePane(focusedPaneId.value);
