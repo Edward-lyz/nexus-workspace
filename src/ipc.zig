@@ -611,9 +611,9 @@ pub const Server = struct {
             return;
         };
 
-        var resp_buf: [1024]u8 = undefined;
-        var fbs = std.io.fixedBufferStream(&resp_buf);
-        const writer = fbs.writer();
+        var response = std.ArrayList(u8).init(self.allocator);
+        defer response.deinit();
+        const writer = response.writer();
         writer.writeByte('{') catch return;
         writer.writeAll("\"id\":") catch return;
         writeJsonString(writer, task_id) catch return;
@@ -631,7 +631,7 @@ pub const Server = struct {
             writeJsonString(writer, parent) catch return;
         }
         writer.writeByte('}') catch return;
-        sendResult(client, id, fbs.getWritten());
+        sendResult(client, id, response.items);
     }
 
     fn rpcTaskUpdate(self: *Server, params: std.json.ObjectMap, id: ?std.json.Value, client: *Client) void {
