@@ -17,6 +17,7 @@ import {
   activeSpace, focusedPaneId, panes, deletePane,
   initializeAgentPool, schedulerSettings, detectPlanMode,
   loadCustomAgents, loadExecutionHistory, popoutPane,
+  planModeAlert, expandPane, loadPopoutPositions,
 } from './store';
 import type { SpaceState } from './store';
 
@@ -82,8 +83,22 @@ export function App() {
       await initializeAgentPool(schedulerSettings.peek().concurrency);
       loadCustomAgents();
       loadExecutionHistory();
+      // Restore popout positions from last session
+      loadPopoutPositions();
     })();
   }, []);
+
+  // Watch for plan mode alerts and show notification
+  useEffect(() => {
+    const alert = planModeAlert.value;
+    if (!alert) return;
+    showNotificationBanner(
+      `${alert.agentName} — Plan Ready`,
+      'An agent has generated a plan. Review and approve or request changes.'
+    );
+    // Focus the pane to make overlay visible
+    expandPane(alert.paneId);
+  }, [planModeAlert.value]);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
