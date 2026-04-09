@@ -1661,7 +1661,6 @@ html, body {
   box-shadow: var(--nx-shadow-lg), 0 0 40px rgba(0, 0, 0, 0.4);
   pointer-events: auto;
   overflow: hidden;
-  animation: popoutIn 200ms ease-out;
 }
 
 @keyframes popoutIn {
@@ -1699,6 +1698,7 @@ html, body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  flex: 1;
 }
 
 .popout-close {
@@ -2740,3 +2740,410 @@ html, body {
   max-height: 150px;
   overflow-y: auto;
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   POPOUT WINDOW — Smooth animations, maximize, liquid glass
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.popout-window {
+  transition: width var(--nx-transition-slow), height var(--nx-transition-slow),
+              left var(--nx-transition-slow), top var(--nx-transition-slow),
+              border-radius var(--nx-transition-slow), box-shadow var(--nx-transition-base);
+  backdrop-filter: blur(var(--nx-glass-blur)) saturate(var(--nx-glass-saturate));
+  -webkit-backdrop-filter: blur(var(--nx-glass-blur)) saturate(var(--nx-glass-saturate));
+}
+
+.popout-window.mounting {
+  opacity: 0;
+  transform: scale(0.88) translateY(16px);
+  pointer-events: none;
+}
+
+.popout-window:not(.mounting) {
+  opacity: 1;
+  transform: scale(1) translateY(0);
+  transition: opacity 240ms cubic-bezier(0.34, 1.56, 0.64, 1),
+              transform 240ms cubic-bezier(0.34, 1.56, 0.64, 1),
+              width var(--nx-transition-slow), height var(--nx-transition-slow),
+              left var(--nx-transition-slow), top var(--nx-transition-slow),
+              border-radius var(--nx-transition-slow);
+}
+
+.popout-window.maximized {
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+
+.popout-window.maximized .popout-header {
+  cursor: default;
+}
+
+.popout-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--nx-space-1);
+}
+
+.popout-maximize {
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: var(--nx-radius-sm);
+  background: transparent;
+  color: var(--nx-text-tertiary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--nx-transition-fast);
+}
+
+.popout-maximize:hover {
+  background: var(--nx-accent-subtle);
+  color: var(--nx-accent);
+}
+
+/* Active state for expand/popout buttons when toggled */
+.btn-expand.active,
+.btn-popout.active {
+  background: var(--nx-accent-subtle);
+  color: var(--nx-accent);
+  opacity: 1 !important;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   TASK — Subtasks tree inline view
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.task-subtasks-list {
+  margin-top: var(--nx-space-3);
+  border-radius: var(--nx-radius-sm);
+  border: 1px solid var(--nx-border-subtle);
+  overflow: hidden;
+}
+
+.task-subtasks-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--nx-space-1) var(--nx-space-2);
+  background: var(--nx-surface-hover);
+  border-bottom: 1px solid var(--nx-border-subtle);
+}
+
+.task-subtasks-label {
+  font-family: var(--nx-font-mono);
+  font-size: var(--nx-text-xs);
+  color: var(--nx-text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: var(--nx-tracking-caps);
+}
+
+.task-subtask-item {
+  display: flex;
+  align-items: center;
+  gap: var(--nx-space-2);
+  padding: var(--nx-space-1) var(--nx-space-2);
+  border-bottom: 1px solid var(--nx-border-subtle);
+  cursor: pointer;
+  transition: background var(--nx-transition-fast);
+}
+
+.task-subtask-item:last-child {
+  border-bottom: none;
+}
+
+.task-subtask-item:hover {
+  background: var(--nx-surface-hover);
+}
+
+.subtask-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--nx-text-ghost);
+}
+
+.subtask-dot.status-todo { background: var(--nx-text-ghost); }
+.subtask-dot.status-doing { background: var(--nx-warning); }
+.subtask-dot.status-done { background: var(--nx-success); }
+
+.task-subtask-title {
+  flex: 1;
+  font-size: var(--nx-text-xs);
+  color: var(--nx-text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.subtask-status-badge {
+  font-family: var(--nx-font-mono);
+  font-size: 9px;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: var(--nx-surface-hover);
+  color: var(--nx-text-ghost);
+  flex-shrink: 0;
+}
+
+.subtask-status-badge.doing {
+  background: rgba(251, 191, 36, 0.12);
+  color: var(--nx-warning);
+}
+
+.subtask-status-badge.done {
+  background: rgba(74, 222, 128, 0.12);
+  color: var(--nx-success);
+}
+
+/* Add sub-task inline form */
+.subtask-add-form {
+  display: flex;
+  align-items: center;
+  gap: var(--nx-space-2);
+  margin-top: var(--nx-space-2);
+}
+
+.subtask-input {
+  flex: 1;
+  background: var(--nx-ink-float);
+  border: 1px solid var(--nx-border);
+  border-radius: var(--nx-radius-sm);
+  padding: var(--nx-space-1) var(--nx-space-2);
+  font-size: var(--nx-text-xs);
+  color: var(--nx-text-primary);
+  outline: none;
+  font-family: var(--nx-font-mono);
+  transition: border-color var(--nx-transition-fast);
+}
+
+.subtask-input:focus {
+  border-color: var(--nx-accent);
+}
+
+.subtask-add-actions {
+  display: flex;
+  gap: var(--nx-space-1);
+}
+
+.subtask-btn-add {
+  padding: 2px var(--nx-space-2);
+  background: var(--nx-accent-subtle);
+  border: 1px solid var(--nx-accent);
+  border-radius: var(--nx-radius-sm);
+  color: var(--nx-accent);
+  font-size: var(--nx-text-xs);
+  cursor: pointer;
+  transition: all var(--nx-transition-fast);
+}
+
+.subtask-btn-add:hover {
+  background: var(--nx-accent);
+  color: var(--nx-ink);
+}
+
+.subtask-btn-cancel {
+  padding: 2px 6px;
+  background: transparent;
+  border: 1px solid var(--nx-border);
+  border-radius: var(--nx-radius-sm);
+  color: var(--nx-text-tertiary);
+  font-size: var(--nx-text-xs);
+  cursor: pointer;
+  transition: all var(--nx-transition-fast);
+}
+
+.subtask-btn-cancel:hover {
+  border-color: var(--nx-error);
+  color: var(--nx-error);
+}
+
+.subtask-add-trigger {
+  margin-top: var(--nx-space-2);
+  background: none;
+  border: 1px dashed var(--nx-border);
+  border-radius: var(--nx-radius-sm);
+  padding: var(--nx-space-1) var(--nx-space-2);
+  font-size: var(--nx-text-xs);
+  color: var(--nx-text-ghost);
+  cursor: pointer;
+  width: 100%;
+  text-align: left;
+  transition: all var(--nx-transition-fast);
+  font-family: var(--nx-font-mono);
+}
+
+.subtask-add-trigger:hover {
+  border-color: var(--nx-accent);
+  color: var(--nx-accent);
+  background: var(--nx-accent-subtle);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   BEST OF N — Multi-agent parallel task execution
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.task-actions-row {
+  display: flex;
+  gap: var(--nx-space-2);
+  align-items: center;
+}
+
+.task-dispatch-btn.secondary {
+  background: transparent;
+  border-color: var(--nx-border-strong);
+  color: var(--nx-text-tertiary);
+}
+
+.task-dispatch-btn.secondary:hover {
+  border-color: var(--nx-info);
+  color: var(--nx-info);
+  background: rgba(96, 165, 250, 0.08);
+}
+
+.task-dispatch-btn.primary {
+  background: var(--nx-accent-subtle);
+  border-color: var(--nx-accent);
+  color: var(--nx-accent);
+}
+
+.task-dispatch-btn.primary:hover {
+  background: var(--nx-accent);
+  color: var(--nx-ink);
+}
+
+.best-of-n-panel {
+  margin-top: var(--nx-space-2);
+  padding: var(--nx-space-3);
+  background: var(--nx-surface-hover);
+  border-radius: var(--nx-radius-md);
+  border: 1px solid var(--nx-border);
+  display: flex;
+  flex-direction: column;
+  gap: var(--nx-space-2);
+}
+
+.best-of-n-row {
+  display: flex;
+  align-items: center;
+  gap: var(--nx-space-2);
+  font-size: var(--nx-text-sm);
+}
+
+.best-of-n-label {
+  color: var(--nx-text-secondary);
+  font-size: var(--nx-text-sm);
+}
+
+.best-of-n-select {
+  background: var(--nx-ink-float);
+  border: 1px solid var(--nx-border);
+  border-radius: var(--nx-radius-sm);
+  padding: 2px var(--nx-space-2);
+  color: var(--nx-text-primary);
+  font-size: var(--nx-text-sm);
+  font-family: var(--nx-font-mono);
+  outline: none;
+  cursor: pointer;
+}
+
+.best-of-n-agents {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--nx-space-1);
+}
+
+.task-agent-chip-sm {
+  padding: 1px 6px;
+  border-radius: var(--nx-radius-sm);
+  font-size: 9px;
+  font-family: var(--nx-font-mono);
+  background: color-mix(in srgb, var(--agent-color, var(--nx-accent)) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--agent-color, var(--nx-accent)) 30%, transparent);
+  color: var(--agent-color, var(--nx-accent));
+}
+
+.best-of-n-actions {
+  display: flex;
+  gap: var(--nx-space-2);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   LIQUID GLASS — Enhanced glassmorphism effects
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Iridescent border for focused panes */
+@keyframes iridescent-border {
+  0%   { --glass-border-hue: 185deg; }
+  25%  { --glass-border-hue: 200deg; }
+  50%  { --glass-border-hue: 220deg; }
+  75%  { --glass-border-hue: 200deg; }
+  100% { --glass-border-hue: 185deg; }
+}
+
+.pane.focused {
+  box-shadow:
+    0 0 0 1px var(--nx-accent),
+    0 0 20px var(--nx-accent-glow),
+    var(--nx-shadow-lg);
+  backdrop-filter: blur(32px) saturate(200%);
+  -webkit-backdrop-filter: blur(32px) saturate(200%);
+}
+
+/* Liquid glass pulse on plan mode */
+@keyframes glass-pulse {
+  0%, 100% { box-shadow: 0 0 0 1px var(--nx-accent), 0 0 20px var(--nx-accent-glow); }
+  50% { box-shadow: 0 0 0 2px var(--nx-accent), 0 0 40px var(--nx-accent-glow), 0 0 60px rgba(34, 211, 238, 0.08); }
+}
+
+.pane:has(.plan-mode-overlay) {
+  animation: glass-pulse 2s ease-in-out infinite;
+}
+
+/* Enhanced notification banner with glass */
+.notification-banner {
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+}
+
+/* Smooth dialog entrance */
+.dialog-overlay {
+  animation: fadeIn 150ms ease-out;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.dialog {
+  animation: dialogSlideIn 200ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes dialogSlideIn {
+  from { opacity: 0; transform: translateY(-12px) scale(0.96); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* Expanded pane overlay entrance */
+.expanded-overlay {
+  animation: fadeIn 150ms ease-out;
+}
+
+.expanded-container {
+  animation: dialogSlideIn 250ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* Sidebar glass enhancement */
+.sidebar {
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+}
+
+/* Status-dot data-status support */
+.status-dot-sm[data-status="todo"]  { background: var(--nx-text-ghost); }
+.status-dot-sm[data-status="doing"] { background: var(--nx-warning); box-shadow: 0 0 4px var(--nx-warning); }
+.status-dot-sm[data-status="done"]  { background: var(--nx-success); }
+

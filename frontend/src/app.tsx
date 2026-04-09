@@ -45,9 +45,6 @@ export function App() {
     (async () => {
       await ipc.connect();
 
-      // Initialize agent pool with configured concurrency
-      initializeAgentPool(schedulerSettings.peek().concurrency);
-
       ipc.on('pty.data', (params) => {
         const { session_id, data } = params as { session_id: string; data: string };
         const term = terminalRegistry.get(session_id);
@@ -79,7 +76,10 @@ export function App() {
         if (pane_id) updatePane(pane_id, { taskDescription: description });
       });
 
-      hydrateState();
+      // Await hydration so the active space is set before initializing the agent pool
+      await hydrateState();
+      // Initialize agent pool after space is known
+      await initializeAgentPool(schedulerSettings.peek().concurrency);
       loadCustomAgents();
       loadExecutionHistory();
     })();
