@@ -17,6 +17,7 @@ import {
   activeSpace, focusedPaneId, panes, deletePane,
   initializeAgentPool, schedulerSettings, detectPlanMode,
   loadCustomAgents, loadExecutionHistory, popoutPane,
+  planModeAlert, expandPane, loadPopoutPositions,
 } from './store';
 import type { SpaceState } from './store';
 
@@ -44,9 +45,6 @@ export function App() {
   useEffect(() => {
     (async () => {
       await ipc.connect();
-
-      // Initialize agent pool with configured concurrency
-      initializeAgentPool(schedulerSettings.peek().concurrency);
 
       ipc.on('pty.data', (params) => {
         const { session_id, data } = params as { session_id: string; data: string };
@@ -79,11 +77,28 @@ export function App() {
         if (pane_id) updatePane(pane_id, { taskDescription: description });
       });
 
-      hydrateState();
+      // Await hydration so the active space is set before initializing the agent pool
+      await hydrateState();
+      // Initialize agent pool after space is known
+      await initializeAgentPool(schedulerSettings.peek().concurrency);
       loadCustomAgents();
       loadExecutionHistory();
+      // Restore popout positions from last session
+      loadPopoutPositions();
     })();
   }, []);
+
+  // Watch for plan mode alerts and show notification
+  useEffect(() => {
+    const alert = planModeAlert.value;
+    if (!alert) return;
+    showNotificationBanner(
+      `${alert.agentName} — Plan Ready`,
+      'An agent has generated a plan. Review and approve or request changes.'
+    );
+    // Focus the pane to make overlay visible
+    expandPane(alert.paneId);
+  }, [planModeAlert.value]);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -172,7 +187,7 @@ export function App() {
         />
         <TilingGrid />
       </div>
-      <StatusBar />
+      <StatusBar onOpenSettings={() => setDialog('settings')} onOpenHistory={() => setDialog('history')} />
       <PopoutContainer />
       <ExpandedPane />
       {dialog === 'agent' && dialogSpace && <AgentDialog space={dialogSpace} onClose={closeDialog} />}

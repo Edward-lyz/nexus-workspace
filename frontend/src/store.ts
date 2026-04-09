@@ -297,6 +297,32 @@ export interface PopoutPane {
 export const popoutPanes = signal<Map<string, PopoutPane>>(new Map());
 let nextPopoutZIndex = 100;
 
+function savePopoutPositions() {
+  try {
+    const positions: Record<string, { x: number; y: number; width: number; height: number }> = {};
+    for (const [id, p] of popoutPanes.value) {
+      positions[id] = { x: p.x, y: p.y, width: p.width, height: p.height };
+    }
+    localStorage.setItem('nexus-popout-positions', JSON.stringify(positions));
+  } catch {}
+}
+
+export function loadPopoutPositions() {
+  try {
+    const saved = localStorage.getItem('nexus-popout-positions');
+    if (!saved) return;
+    const positions = JSON.parse(saved) as Record<string, { x: number; y: number; width: number; height: number }>;
+    const map = new Map<string, PopoutPane>();
+    for (const [paneId, bounds] of Object.entries(positions)) {
+      // Verify pane still exists
+      if (panes.value.some(p => p.id === paneId)) {
+        map.set(paneId, { paneId, ...bounds, zIndex: ++nextPopoutZIndex });
+      }
+    }
+    if (map.size > 0) popoutPanes.value = map;
+  } catch {}
+}
+
 export function popoutPane(paneId: string) {
   const existing = popoutPanes.value.get(paneId);
   if (existing) {
@@ -316,12 +342,14 @@ export function popoutPane(paneId: string) {
     zIndex: ++nextPopoutZIndex,
   };
   popoutPanes.value = new Map(popoutPanes.value).set(paneId, popout);
+  savePopoutPositions();
 }
 
 export function closePopout(paneId: string) {
   const map = new Map(popoutPanes.value);
   map.delete(paneId);
   popoutPanes.value = map;
+  savePopoutPositions();
 }
 
 export function updatePopout(paneId: string, updates: Partial<PopoutPane>) {
@@ -329,6 +357,7 @@ export function updatePopout(paneId: string, updates: Partial<PopoutPane>) {
   if (!existing) return;
   const updated = { ...existing, ...updates };
   popoutPanes.value = new Map(popoutPanes.value).set(paneId, updated);
+  savePopoutPositions();
 }
 
 export function bringPopoutToFront(paneId: string) {
@@ -348,6 +377,14 @@ export function expandPane(paneId: string | null) {
 const PLAN_MODE_START_PATTERN = /\[Plan Mode\]|Entering plan mode|Plan:/i;
 const PLAN_MODE_END_PATTERN = /\[Exit Plan Mode\]|Exiting plan mode|Plan approved/i;
 
+// Signal fired when an agent enters plan mode - app.tsx can watch this to show notifications
+export interface PlanModeAlert {
+  paneId: string;
+  agentName: string;
+  timestamp: number;
+}
+export const planModeAlert = signal<PlanModeAlert | null>(null);
+
 // Call this when terminal receives data to check for plan mode transitions
 export function detectPlanMode(sessionId: string, data: string) {
   const pane = panes.value.find(p => p.sessionId === sessionId);
@@ -356,6 +393,12 @@ export function detectPlanMode(sessionId: string, data: string) {
   // Detect plan mode start
   if (!pane.planMode && PLAN_MODE_START_PATTERN.test(data)) {
     updatePane(pane.id, { planMode: true, planContent: '' });
+    // Emit a plan notification event
+    planModeAlert.value = {
+      paneId: pane.id,
+      agentName: pane.agentName ?? 'Agent',
+      timestamp: Date.now(),
+    };
   }
 
   // Accumulate plan content when in plan mode
@@ -696,6 +739,28 @@ export async function spawnAgentForTask(taskPaneId: string, agentId: string, pro
     updatePane(agentPane.id, { embedded: true });
     linkPane(taskPaneId, agentPane.id);
     updatePane(taskPaneId, { taskStatus: 'doing' });
+  }
+}
+
+const BEST_OF_N_TITLE_MAX_LENGTH = 40;
+
+// Best of N: run a task N times with different or same agents
+export async function spawnBestOfN(taskPaneId: string, agentIds: string[], prompt: string): Promise<void> {
+  const space = activeSpace.value;
+  if (!space) return;
+
+  for (let i = 0; i < agentIds.length; i++) {
+    const agentId = agentIds[i];
+    // Create a sub-task for each run
+    const subTask = await createTask(
+      `Run ${i + 1}: ${prompt.slice(0, BEST_OF_N_TITLE_MAX_LENGTH)}`,
+      prompt,
+      'medium',
+      taskPaneId
+    );
+    if (subTask) {
+      await spawnAgentForTask(subTask.id, agentId, prompt);
+    }
   }
 }
 
@@ -1248,13 +1313,15 @@ export async function hydrateState(): Promise<void> {
         // Use workspace path for spawning, or default
         const cwd = ws.path || undefined;
 
-        // Re-spawn PTY sessions for agents and tasks that need them
+        // Re-spawn PTY sessions ONLY for slot-based pool agents (background slots)
+        // Individual task/agent panes should be re-dispatched by user or auto-dispatch
         for (const pane of restoredPanes) {
-          if (pane.kind === 'agent' || pane.kind === 'task') {
+          // Only spawn shell-kind panes that were actively running
+          if (pane.kind === 'shell') {
             try {
               const resp = await ipc.call<{ session_id: string }>('pty.spawn', {
                 cwd,
-                kind: 'agent',
+                kind: 'shell',
                 space_id: pane.spaceId,
                 node_id: pane.id,
               });

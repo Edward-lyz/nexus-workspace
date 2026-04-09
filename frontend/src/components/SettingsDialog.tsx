@@ -9,8 +9,8 @@ import {
   removeCustomAgent,
   ipc,
   currentWorkspaceId,
-  exportWorkspaceToJson,
-  importWorkspaceFromJson,
+  exportWorkspace,
+  importWorkspace,
 } from '../store';
 
 interface Props {
@@ -63,17 +63,24 @@ export function SettingsDialog({ onClose }: Props) {
     onClose();
   };
 
-  const handleExport = () => {
-    const json = exportWorkspaceToJson();
-    const blob = new Blob([json], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `cove-workspace-${new Date().toISOString().slice(0, 10)}.json`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+  const handleExport = async () => {
+    const wsId = currentWorkspaceId.value;
+    if (!wsId) { alert('No workspace loaded'); return; }
+    try {
+      const json = await exportWorkspace(wsId);
+      const blob = new Blob([json], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `nexus-workspace-${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Export failed:', err);
+      alert('Export failed: ' + (err instanceof Error ? err.message : String(err)));
+    }
   };
 
   const handleImportClick = () => {
@@ -87,7 +94,7 @@ export function SettingsDialog({ onClose }: Props) {
 
     try {
       const text = await file.text();
-      await importWorkspaceFromJson(text);
+      await importWorkspace(text);
       setImportError(null);
       onClose();
     } catch (err) {
