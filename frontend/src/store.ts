@@ -658,7 +658,7 @@ function normalizeSchedulerSettings(raw: any): SchedulerSettings {
   };
 }
 
-async function loadSchedulerSettings(workspaceId: string): Promise<void> {
+export async function loadSchedulerSettings(workspaceId: string): Promise<void> {
   try {
     const settings = await ipc.call<any>('scheduler.getSettings', { workspace_id: workspaceId });
     schedulerSettings.value = normalizeSchedulerSettings(settings);
@@ -1169,22 +1169,35 @@ export function focusPane(paneId: string) {
 }
 
 export async function createSpace(name: string, id?: string): Promise<SpaceState | null> {
-  const workspaceId = await ensureWorkspace();
+  const workspaceId = currentWorkspaceId.value ?? await ensureWorkspace();
   if (!workspaceId) return null;
+
+  const optimisticId = id ?? `space-${Date.now()}`;
+  const optimisticSpace = { id: optimisticId, name };
+  spaces.value = [...spaces.value, optimisticSpace];
+  activeSpaceId.value = optimisticSpace.id;
 
   try {
     const created = await ipc.call<{ id: string }>('space.create', {
       workspace_id: workspaceId,
       name,
-      id,
+      id: optimisticId,
     });
-    const space = { id: created.id, name };
-    spaces.value = [...spaces.value, space];
-    activeSpaceId.value = space.id;
-    return space;
+
+    if (created.id !== optimisticId) {
+      spaces.value = spaces.value.map(space =>
+        space.id === optimisticId ? { ...space, id: created.id } : space
+      );
+      if (activeSpaceId.value === optimisticId) {
+        activeSpaceId.value = created.id;
+      }
+      return { id: created.id, name };
+    }
+
+    return optimisticSpace;
   } catch (err) {
     console.error('space.create failed:', err);
-    return null;
+    return optimisticSpace;
   }
 }
 
@@ -1306,7 +1319,6 @@ export async function hydrateState(): Promise<void> {
       const restoredTasks = new Map<string, TaskEntity>();
       const restoredAgents = new Map<string, AgentEntity>();
       currentWorkspaceId.value = ws.id;
-      await loadSchedulerSettings(ws.id);
 
       // Restore workspace path (default cwd)
       workspacePath.value = ws.path || '';
@@ -1616,12 +1628,29 @@ export async function importWorkspaceFromJson(json: string): Promise<void> {
 }
 
 // Backend-backed export (full persistence)
-export async function exportWorkspace(): Promise<string> {
+export async function exportWorkspace(workspaceId = currentWorkspaceId.value ?? undefined): Promise<string> {
+  if (workspaceId) {
+    try {
+      const result = await ipc.call<{ json: string }>('workspace.export', { workspace_id: workspaceId });
+      return result.json;
+    } catch (err) {
+      console.warn('workspace.export failed, falling back to frontend export:', err);
+    }
+  }
   return exportWorkspaceToJson();
 }
 
 export async function importWorkspace(json: string): Promise<void> {
-  await importWorkspaceFromJson(json);
+  try {
+    const parsed = JSON.parse(json) as { version?: number };
+    if (parsed.version === 1) {
+      await importWorkspaceFromJson(json);
+      return;
+    }
+  } catch {}
+
+  await ipc.call('workspace.import', { json });
+  await hydrateState();
 }
 
 // -- Auto dispatch effect (Pool-based, now with backend persistence) --
