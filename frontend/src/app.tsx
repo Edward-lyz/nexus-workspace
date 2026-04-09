@@ -14,10 +14,10 @@ import { PopoutContainer } from './components/PopoutPane';
 import { terminalRegistry } from './components/TerminalPane';
 import {
   ipc, hydrateState, markSessionExited, updatePane,
-  activeSpace, focusedPaneId, panes, deletePane,
-  initializeAgentPool, schedulerSettings, detectPlanMode,
-  loadCustomAgents, loadExecutionHistory, popoutPane,
-  planModeAlert, expandPane, loadPopoutPositions,
+   activeSpace, focusedPaneId, panes, deletePane,
+   initializeAgentPool, schedulerSettings, detectPlanMode,
+   loadCustomAgents, loadExecutionHistory, popoutPane,
+   planModeAlert, expandPane, loadPopoutPositions, currentWorkspaceId, loadSchedulerSettings,
 } from './store';
 import type { SpaceState } from './store';
 
@@ -79,6 +79,9 @@ export function App() {
 
       // Await hydration so the active space is set before initializing the agent pool
       await hydrateState();
+      if (currentWorkspaceId.value) {
+        await loadSchedulerSettings(currentWorkspaceId.value);
+      }
       // Initialize agent pool after space is known
       await initializeAgentPool(schedulerSettings.peek().concurrency);
       loadCustomAgents();

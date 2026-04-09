@@ -37,6 +37,7 @@ const TERMINAL_THEME = {
 
 // Global registry so PTY data handler can find terminals by sessionId
 export const terminalRegistry = new Map<string, Terminal>();
+const terminalSnapshotRegistry = new Map<string, string>();
 
 interface Props {
   pane: PaneState;
@@ -74,6 +75,11 @@ export function TerminalPane({ pane }: Props) {
     terminal.loadAddon(serializeAddon);
     terminal.open(container);
 
+    const snapshot = terminalSnapshotRegistry.get(pane.sessionId);
+    if (snapshot) {
+      terminal.write(snapshot);
+    }
+
     termRef.current = terminal;
     fitRef.current = fitAddon;
     terminalRegistry.set(pane.sessionId, terminal);
@@ -95,6 +101,7 @@ export function TerminalPane({ pane }: Props) {
 
     return () => {
       resizeObserver.disconnect();
+      terminalSnapshotRegistry.set(pane.sessionId, serializeAddon.serialize());
       terminalRegistry.delete(pane.sessionId);
       terminal.dispose();
     };

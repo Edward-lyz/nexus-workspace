@@ -60,7 +60,9 @@ pub fn spawn(
     if (pid == 0) {
         // Child process
         if (cwd) |dir| {
-            std.posix.chdir(dir) catch {};
+            const resolved_dir = resolveWorkingDirectory(allocator, dir) catch dir;
+            defer if (resolved_dir.ptr != dir.ptr) allocator.free(resolved_dir);
+            std.posix.chdir(resolved_dir) catch {};
         }
 
         // Set environment variables - these modify the process environment
@@ -82,7 +84,8 @@ pub fn spawn(
             defer allocator.free(wrapped_cmd);
             const argv = [_:null]?[*:0]const u8{
                 @ptrCast(shell),
-                "-l".ptr,
+                // Use both login and interactive modes so shell profile files populate CLI auth env vars.
+                "-il".ptr,
                 "-c".ptr,
                 wrapped_cmd.ptr,
                 null,
@@ -135,6 +138,24 @@ fn buildWrappedCommand(allocator: std.mem.Allocator, command: []const u8) ![:0]u
 
 fn buildLoginArg0(allocator: std.mem.Allocator, shell: []const u8) ![:0]u8 {
     return std.fmt.allocPrintSentinel(allocator, "-{s}", .{std.fs.path.basename(shell)}, 0);
+}
+
+fn resolveWorkingDirectory(allocator: std.mem.Allocator, dir: []const u8) ![]const u8 {
+    if (dir.len == 0 or dir[0] != '~') {
+        return dir;
+    }
+
+    const home = std.posix.getenv("HOME") orelse return dir;
+    if (std.mem.eql(u8, dir, "~")) {
+        return allocator.dupe(u8, home);
+    }
+    if (dir.len > 1 and dir[1] == '/') {
+        if (dir.len == 2) {
+            return allocator.dupe(u8, home);
+        }
+        return std.fmt.allocPrint(allocator, "{s}/{s}", .{ home, dir[2..] });
+    }
+    return dir;
 }
 
 extern "c" fn forkpty(
