@@ -95,11 +95,13 @@ export interface SchedulerSettings {
   defaultAgentId: string;
 }
 
-export const schedulerSettings = signal<SchedulerSettings>({
+const DEFAULT_SCHEDULER_SETTINGS: SchedulerSettings = {
   concurrency: 4,
   autoDispatch: true,
   defaultAgentId: 'claude',
-});
+};
+
+export const schedulerSettings = signal<SchedulerSettings>({ ...DEFAULT_SCHEDULER_SETTINGS });
 
 // -- Agent Pool (derived from agents signal) --
 export const agentPool = computed(() => {
@@ -464,7 +466,12 @@ export const activeSpacePanes = computed(() =>
 
 // Only non-embedded panes go into the tiling grid
 export const activeSpaceGridPanes = computed(() =>
-  panes.value.filter(p => p.spaceId === activeSpaceId.value && !p.embedded)
+  panes.value.filter(p =>
+    p.spaceId === activeSpaceId.value &&
+    !p.embedded &&
+    p.id !== expandedPaneId.value &&
+    !popoutPanes.value.has(p.id)
+  )
 );
 
 export const activeSpaceNotes = computed(() =>
@@ -638,6 +645,40 @@ function convertTask(raw: any): TaskEntity {
   };
 }
 
+function normalizeSchedulerSettings(raw: any): SchedulerSettings {
+  return {
+    concurrency: Math.max(1, Number(raw?.concurrency ?? DEFAULT_SCHEDULER_SETTINGS.concurrency) || DEFAULT_SCHEDULER_SETTINGS.concurrency),
+    autoDispatch: typeof raw?.auto_dispatch === 'boolean' ? raw.auto_dispatch : (raw?.autoDispatch ?? DEFAULT_SCHEDULER_SETTINGS.autoDispatch),
+    defaultAgentId: raw?.default_agent_id ?? raw?.defaultAgentId ?? DEFAULT_SCHEDULER_SETTINGS.defaultAgentId,
+  };
+}
+
+async function loadSchedulerSettings(workspaceId: string): Promise<void> {
+  try {
+    const settings = await ipc.call<any>('scheduler.getSettings', { workspace_id: workspaceId });
+    schedulerSettings.value = normalizeSchedulerSettings(settings);
+  } catch {
+    schedulerSettings.value = { ...DEFAULT_SCHEDULER_SETTINGS };
+  }
+}
+
+async function ensureWorkspace(): Promise<string | null> {
+  if (currentWorkspaceId.value) return currentWorkspaceId.value;
+
+  try {
+    const created = await ipc.call<{ id: string }>('workspace.create', {
+      name: 'Default',
+      path: workspacePath.value,
+    });
+    currentWorkspaceId.value = created.id;
+    await loadSchedulerSettings(created.id);
+    return created.id;
+  } catch (err) {
+    console.error('workspace.create failed:', err);
+    return null;
+  }
+}
+
 // -- Internal helpers --
 
 let paneCounter = 0;
@@ -655,7 +696,10 @@ async function spawnTerminal(
   command?: string,
   prompt?: string,
 ): Promise<PaneState | null> {
-  const space = activeSpace.value;
+  let space = activeSpace.value;
+  if (!space) {
+    space = await createSpace('Default');
+  }
   if (!space) return null;
 
   // Use workspace path as cwd, default to home/.claude for agents
@@ -771,7 +815,10 @@ export async function createTask(
   priority: 'low' | 'medium' | 'high' = 'medium',
   parentTaskId?: string
 ): Promise<TaskEntity | null> {
-  const space = activeSpace.value;
+  let space = activeSpace.value;
+  if (!space) {
+    space = await createSpace('Default');
+  }
   if (!space) return null;
 
   try {
@@ -971,7 +1018,7 @@ function handleAgentCompletion(sessionId: string): void {
 // -- Workspace Path (default working directory) --
 
 export async function setWorkspacePath(path: string): Promise<void> {
-  const wsId = currentWorkspaceId.value;
+  const wsId = await ensureWorkspace();
   if (!wsId) return;
   try {
     await ipc.call('workspace.setPath', { workspace_id: wsId, path });
@@ -1116,10 +1163,24 @@ export function focusPane(paneId: string) {
   focusedPaneId.value = paneId;
 }
 
-export function createSpace(name: string) {
-  const id = `space-${Date.now()}`;
-  spaces.value = [...spaces.value, { id, name }];
-  activeSpaceId.value = id;
+export async function createSpace(name: string, id?: string): Promise<SpaceState | null> {
+  const workspaceId = await ensureWorkspace();
+  if (!workspaceId) return null;
+
+  try {
+    const created = await ipc.call<{ id: string }>('space.create', {
+      workspace_id: workspaceId,
+      name,
+      id,
+    });
+    const space = { id: created.id, name };
+    spaces.value = [...spaces.value, space];
+    activeSpaceId.value = space.id;
+    return space;
+  } catch (err) {
+    console.error('space.create failed:', err);
+    return null;
+  }
 }
 
 export function getLinkedPane(paneId: string): PaneState | undefined {
@@ -1240,6 +1301,7 @@ export async function hydrateState(): Promise<void> {
       const restoredTasks = new Map<string, TaskEntity>();
       const restoredAgents = new Map<string, AgentEntity>();
       currentWorkspaceId.value = ws.id;
+      await loadSchedulerSettings(ws.id);
 
       // Restore workspace path (default cwd)
       workspacePath.value = ws.path || '';
@@ -1339,10 +1401,12 @@ export async function hydrateState(): Promise<void> {
     }
 
     // Fall back to creating default space
-    createSpace('Default');
+    await ensureWorkspace();
+    await createSpace('Default');
   } catch (err) {
     console.error('hydrateState failed:', err);
-    createSpace('Default');
+    await ensureWorkspace();
+    await createSpace('Default');
   }
 }
 
@@ -1422,6 +1486,34 @@ export function exportWorkspaceToJson(): string {
   return JSON.stringify(exported, null, 2);
 }
 
+function normalizeImportedTask(task: TaskEntity) {
+  if (task.status === 'done' || task.queueStatus === 'completed') {
+    return { status: 'done' as const, queueStatus: 'completed' as const };
+  }
+
+  if (task.queueStatus === 'queued' || task.queueStatus === 'dispatched' || task.status === 'doing') {
+    return { status: 'todo' as const, queueStatus: 'queued' as const };
+  }
+
+  return { status: 'todo' as const, queueStatus: 'none' as const };
+}
+
+async function clearCurrentWorkspaceState(): Promise<void> {
+  const existingSpaces = [...spaces.value];
+  for (const space of existingSpaces) {
+    await ipc.call('space.delete', { id: space.id });
+  }
+
+  spaces.value = [];
+  panes.value = [];
+  tasks.value = new Map();
+  agents.value = new Map();
+  notes.value = [];
+  focusedPaneId.value = null;
+  expandedPaneId.value = null;
+  popoutPanes.value = new Map();
+}
+
 // Import workspace state from JSON (frontend-only)
 export async function importWorkspaceFromJson(json: string): Promise<void> {
   const data = JSON.parse(json) as ExportedWorkspace;
@@ -1430,60 +1522,99 @@ export async function importWorkspaceFromJson(json: string): Promise<void> {
     throw new Error(`Unsupported export version: ${data.version}`);
   }
 
-  // Clear current state
-  const spaceId = activeSpaceId.value;
-  if (!spaceId) return;
+  const workspaceId = await ensureWorkspace();
+  if (!workspaceId) {
+    throw new Error('No workspace available');
+  }
 
-  // Import tasks
-  for (const task of data.tasks) {
-    // Create task in backend
-    try {
-      await ipc.call('task.create', {
-        id: task.id,
-        space_id: spaceId,
-        title: task.title,
-        description: task.description,
-        status: task.status,
-        priority: task.priority,
-        queue_status: task.queueStatus,
-        parent_task_id: task.parentTaskId,
-      });
-    } catch (e) {
-      console.warn('Failed to import task:', task.id, e);
+  await clearCurrentWorkspaceState();
+  await setWorkspacePath(data.workspace.path ?? '');
+
+  const importedSettings = normalizeSchedulerSettings(data.schedulerSettings);
+  await ipc.call('scheduler.setSettings', {
+    workspace_id: workspaceId,
+    concurrency: importedSettings.concurrency,
+    auto_dispatch: importedSettings.autoDispatch,
+    default_agent_id: importedSettings.defaultAgentId,
+  });
+  schedulerSettings.value = importedSettings;
+
+  const spaceIdMap = new Map<string, string>();
+  for (const space of data.spaces) {
+    const created = await createSpace(space.name, space.id);
+    if (created) {
+      spaceIdMap.set(space.id, created.id);
     }
   }
 
-  // Import notes
-  for (const note of data.notes) {
-    createNote(note.text);
+  if (spaceIdMap.size === 0) {
+    const fallback = await createSpace('Default');
+    if (fallback) {
+      spaceIdMap.set('default', fallback.id);
+    }
   }
 
-  // Update scheduler settings
-  schedulerSettings.value = data.schedulerSettings;
+  const taskIdMap = new Map<string, string>();
+  const pendingTasks = [...data.tasks];
+  while (pendingTasks.length > 0) {
+    let progressed = false;
 
-  // Re-hydrate to sync with backend
+    for (let i = 0; i < pendingTasks.length; i++) {
+      const task = pendingTasks[i];
+      const mappedSpaceId = spaceIdMap.get(task.spaceId) ?? activeSpaceId.value;
+      const mappedParentTaskId = task.parentTaskId ? taskIdMap.get(task.parentTaskId) : undefined;
+
+      if (task.parentTaskId && !mappedParentTaskId) continue;
+      if (!mappedSpaceId) continue;
+
+      const created = await ipc.call<any>('task.create', {
+        id: task.id,
+        space_id: mappedSpaceId,
+        title: task.title,
+        description: task.description,
+        priority: task.priority,
+        parent_task_id: mappedParentTaskId,
+      });
+
+      const createdId = created.id ?? task.id;
+      taskIdMap.set(task.id, createdId);
+
+      const normalized = normalizeImportedTask(task);
+      if (normalized.status !== 'todo' || normalized.queueStatus !== 'none') {
+        await ipc.call('task.update', {
+          id: createdId,
+          status: normalized.status,
+          queue_status: normalized.queueStatus,
+        });
+      }
+
+      pendingTasks.splice(i, 1);
+      i--;
+      progressed = true;
+    }
+
+    if (!progressed) {
+      throw new Error('Could not resolve imported task hierarchy');
+    }
+  }
+
+  notes.value = data.notes.map(note => ({
+    ...note,
+    spaceId: spaceIdMap.get(note.spaceId) ?? activeSpaceId.value ?? note.spaceId,
+    linkedPaneId: note.linkedPaneId ? taskIdMap.get(note.linkedPaneId) : undefined,
+  }));
+
   await hydrateState();
 }
 
 // Backend-backed export (full persistence)
 export async function exportWorkspace(workspaceId: string): Promise<string> {
-  try {
-    const result = await ipc.call<{ json: string }>('workspace.export', { workspace_id: workspaceId });
-    return result.json;
-  } catch (err) {
-    console.error('exportWorkspace failed:', err);
-    throw err;
-  }
+  void workspaceId;
+  return exportWorkspaceToJson();
 }
 
 export async function importWorkspace(json: string): Promise<void> {
-  try {
-    await ipc.call('workspace.import', { json });
-    await hydrateState();
-  } catch (err) {
-    console.error('importWorkspace failed:', err);
-    throw err;
-  }
+  await importWorkspaceFromJson(json);
 }
 
 // -- Auto dispatch effect (Pool-based, now with backend persistence) --
@@ -1498,7 +1629,7 @@ async function dispatchTaskToSlot(taskId: string, slotId: string): Promise<void>
   const task = tasks.value.get(taskId);
   if (!task) return;
 
-  const agentProviderId = slot.agentProviderId;
+  const agentProviderId = schedulerSettings.value.defaultAgentId || slot.agentProviderId;
   const prompt = task.description || task.title;
 
   // 1. Assign task to agent via backend (handles bidirectional update)
