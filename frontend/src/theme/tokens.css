@@ -85,18 +85,24 @@
   --nx-surface-active: rgba(255, 255, 255, 0.08);
   --nx-surface-selected: rgba(34, 211, 238, 0.12);
 
-  /* Glass effect */
-  --nx-glass-bg: rgba(10, 13, 18, 0.75);
-  --nx-glass-border: rgba(255, 255, 255, 0.06);
-  --nx-glass-blur: 24px;
-  --nx-glass-saturate: 180%;
+  /* Glass effect — enhanced for liquid glass */
+  --nx-glass-bg: rgba(8, 12, 18, 0.72);
+  --nx-glass-border: rgba(255, 255, 255, 0.08);
+  --nx-glass-blur: 28px;
+  --nx-glass-saturate: 190%;
 
-  /* Shadows - layered depth */
+  /* Liquid glass accent colors */
+  --nx-liquid-cyan: rgba(103, 232, 249, 0.12);
+  --nx-liquid-violet: rgba(200, 150, 255, 0.08);
+  --nx-liquid-warm: rgba(255, 180, 120, 0.06);
+
+  /* Shadows - layered depth with chromatic hints */
   --nx-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
-  --nx-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.5), 0 1px 3px rgba(0, 0, 0, 0.3);
-  --nx-shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.6), 0 2px 8px rgba(0, 0, 0, 0.4);
-  --nx-shadow-glow: 0 0 20px var(--nx-accent-glow), 0 0 40px var(--nx-accent-glow);
-  --nx-shadow-inner: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+  --nx-shadow-md: 0 4px 16px rgba(0, 0, 0, 0.45), 0 2px 4px rgba(0, 0, 0, 0.3);
+  --nx-shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.5), 0 4px 12px rgba(0, 0, 0, 0.35);
+  --nx-shadow-glow: 0 0 24px var(--nx-accent-glow), 0 0 48px var(--nx-accent-glow);
+  --nx-shadow-inner: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  --nx-shadow-chromatic: 0 8px 32px -8px rgba(103, 232, 249, 0.15);
 
   /* Terminal */
   --nx-terminal-bg: #080b0f;

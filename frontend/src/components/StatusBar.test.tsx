@@ -8,7 +8,9 @@ describe('StatusBar', () => {
     store.schedulerSettings.value = { concurrency: 2, autoDispatch: true, defaultAgentId: 'claude' };
     store.panes.value = [
       { id: 'task-1', kind: 'task', spaceId: 'space-1', taskStatus: 'todo' },
-      { id: 'shell-1', kind: 'shell', spaceId: 'space-1', sessionStatus: 'running' },
+      { id: 'shell-1', kind: 'shell', spaceId: 'space-1', sessionId: 'shell-session', sessionStatus: 'running' },
+      { id: 'agent-pane-1', kind: 'agent', spaceId: 'space-1', sessionId: 'agent-session', sessionStatus: 'running' },
+      { id: 'agent-pane-2', kind: 'agent', spaceId: 'space-1', sessionStatus: 'exited' },
     ];
     store.agents.value = new Map([
       ['slot-1', {
@@ -40,9 +42,9 @@ describe('StatusBar', () => {
     const onOpenHistory = vi.fn();
     render(<StatusBar onOpenSettings={onOpenSettings} onOpenHistory={onOpenHistory} />);
 
-    expect(screen.getByText('1 task · 1 session')).toBeTruthy();
+    expect(screen.getByText('1 task · 2 sessions')).toBeTruthy();
     expect(screen.getByText('1 queued')).toBeTruthy();
-    expect(screen.getByText('1 running')).toBeTruthy();
+    expect(screen.getByText('2 running')).toBeTruthy();
     expect(screen.getByText('auto on')).toBeTruthy();
 
     await fireEvent.click(screen.getByText('History'));

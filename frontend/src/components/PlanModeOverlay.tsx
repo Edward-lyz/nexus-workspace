@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'preact/hooks';
 import { approvePlan, rejectPlan, panes } from '../store';
 import type { PaneState } from '../store';
+import { MarkdownViewer } from './MarkdownViewer';
 
 interface Props {
   pane: PaneState;
@@ -33,15 +34,23 @@ export function PlanModeOverlay({ pane }: Props) {
     }
   };
 
+  const handleCopy = async () => {
+    if (!pane.planContent) return;
+    try {
+      await navigator.clipboard.writeText(pane.planContent);
+    } catch {}
+  };
+
   return (
     <div class="plan-mode-overlay">
       <div class="plan-mode-header">
         <span class="plan-mode-badge">Plan Mode</span>
         <span class="plan-mode-title">{pane.agentName} is planning...</span>
+        <button class="plan-btn cancel" onClick={handleCopy}>Copy</button>
       </div>
 
       <div class="plan-mode-content">
-        <pre class="plan-mode-text">{pane.planContent || 'Loading plan...'}</pre>
+        <MarkdownViewer className="plan-mode-markdown" content={pane.planContent || 'Loading plan...'} />
       </div>
 
       <div class="plan-mode-actions">

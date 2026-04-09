@@ -8,12 +8,19 @@ const Allocator = std.mem.Allocator;
 pub const Db = struct {
     handle: *c.sqlite3,
     allocator: Allocator,
+    path: []u8,
 
     pub fn open(allocator: Allocator) !Db {
         const db_path = try resolveDbPath(allocator);
         defer allocator.free(db_path);
 
         return openPath(allocator, db_path);
+    }
+
+    pub fn openAtPath(allocator: Allocator, db_path: []const u8) !Db {
+        const duped = try allocator.dupeZ(u8, db_path);
+        defer allocator.free(duped);
+        return openPath(allocator, duped);
     }
 
     fn openPath(allocator: Allocator, db_path: [:0]const u8) !Db {
@@ -23,13 +30,18 @@ pub const Db = struct {
             return error.SqliteOpenFailed;
         }
 
-        var db = Db{ .handle = handle.?, .allocator = allocator };
+        var db = Db{
+            .handle = handle.?,
+            .allocator = allocator,
+            .path = try allocator.dupe(u8, db_path[0 .. db_path.len - 1]),
+        };
         try db.migrate();
         return db;
     }
 
     pub fn close(self: *Db) void {
         _ = c.sqlite3_close(self.handle);
+        self.allocator.free(self.path);
     }
 
     // -- Schema migration --
@@ -383,7 +395,8 @@ pub const Db = struct {
 
     pub fn saveScrollback(self: *Db, node_id: []const u8, data: []const u8) !void {
         try self.execBind(
-            "INSERT OR REPLACE INTO node_scrollback (node_id, data) VALUES (?1, ?2)",
+            "INSERT INTO node_scrollback (node_id, data) VALUES (?1, ?2) " ++
+                "ON CONFLICT(node_id) DO UPDATE SET data = COALESCE(node_scrollback.data, '') || excluded.data",
             .{ node_id, data },
         );
     }
@@ -476,7 +489,29 @@ pub const Db = struct {
     }
 
     pub fn deleteTask(self: *Db, id: []const u8) !void {
+        var stmt: ?*c.sqlite3_stmt = null;
+        if (c.sqlite3_prepare_v2(self.handle, "SELECT assigned_agent_id FROM tasks WHERE id = ?1", -1, &stmt, null) != c.SQLITE_OK) return;
+        defer _ = c.sqlite3_finalize(stmt);
+        bindText(stmt.?, 1, id);
+
+        var agent_id: ?[]const u8 = null;
+        if (c.sqlite3_step(stmt.?) == c.SQLITE_ROW) {
+            agent_id = dupeColumnTextOpt(self.allocator, stmt.?, 0);
+        }
+        defer if (agent_id) |a| self.allocator.free(a);
+
+        _ = c.sqlite3_exec(self.handle, "BEGIN TRANSACTION", null, null, null);
+        errdefer _ = c.sqlite3_exec(self.handle, "ROLLBACK", null, null, null);
+
+        if (agent_id) |aid| {
+            try self.execBind(
+                "UPDATE agents SET assigned_task_id = NULL, status = 'idle', session_id = NULL, started_at = NULL WHERE id = ?1",
+                .{aid},
+            );
+        }
+
         try self.execBind("DELETE FROM tasks WHERE id = ?1", .{id});
+        _ = c.sqlite3_exec(self.handle, "COMMIT", null, null, null);
     }
 
     pub fn listTasks(self: *Db, allocator: Allocator, space_id: []const u8, parent_task_id: ?[]const u8) ![]TaskRow {
@@ -568,7 +603,44 @@ pub const Db = struct {
         // Clear agent assignment
         if (agent_id) |aid| {
             try self.execBind(
-                "UPDATE agents SET assigned_task_id = NULL, status = 'idle' WHERE id = ?1",
+                "UPDATE agents SET assigned_task_id = NULL, status = 'idle', session_id = NULL, started_at = NULL WHERE id = ?1",
+                .{aid},
+            );
+        }
+
+        _ = c.sqlite3_exec(self.handle, "COMMIT", null, null, null);
+    }
+
+    pub fn resetTaskDispatch(self: *Db, task_id: []const u8, requeue: bool) !void {
+        var stmt: ?*c.sqlite3_stmt = null;
+        if (c.sqlite3_prepare_v2(self.handle, "SELECT assigned_agent_id FROM tasks WHERE id = ?1", -1, &stmt, null) != c.SQLITE_OK) return;
+        defer _ = c.sqlite3_finalize(stmt);
+        bindText(stmt.?, 1, task_id);
+
+        var agent_id: ?[]const u8 = null;
+        if (c.sqlite3_step(stmt.?) == c.SQLITE_ROW) {
+            agent_id = dupeColumnTextOpt(self.allocator, stmt.?, 0);
+        }
+        defer if (agent_id) |a| self.allocator.free(a);
+
+        _ = c.sqlite3_exec(self.handle, "BEGIN TRANSACTION", null, null, null);
+        errdefer _ = c.sqlite3_exec(self.handle, "ROLLBACK", null, null, null);
+
+        if (requeue) {
+            try self.execBind(
+                "UPDATE tasks SET assigned_agent_id = NULL, status = 'todo', queue_status = 'queued', queued_at = strftime('%s','now'), dispatched_at = NULL, completed_at = NULL WHERE id = ?1",
+                .{task_id},
+            );
+        } else {
+            try self.execBind(
+                "UPDATE tasks SET assigned_agent_id = NULL, status = 'todo', queue_status = 'none', queued_at = NULL, dispatched_at = NULL, completed_at = NULL WHERE id = ?1",
+                .{task_id},
+            );
+        }
+
+        if (agent_id) |aid| {
+            try self.execBind(
+                "UPDATE agents SET assigned_task_id = NULL, status = 'idle', session_id = NULL, started_at = NULL WHERE id = ?1",
                 .{aid},
             );
         }
@@ -586,7 +658,7 @@ pub const Db = struct {
         provider_name: []const u8,
     ) !void {
         try self.execBind(
-            "INSERT INTO agents (id, space_id, provider_id, provider_name) VALUES (?1, ?2, ?3, ?4)",
+            "INSERT OR IGNORE INTO agents (id, space_id, provider_id, provider_name) VALUES (?1, ?2, ?3, ?4)",
             .{ id, space_id, provider_id, provider_name },
         );
     }
@@ -597,6 +669,8 @@ pub const Db = struct {
         status: ?[]const u8,
         session_id: ?[]const u8,
         prompt: ?[]const u8,
+        clear_session_id: bool,
+        clear_assignment: bool,
     ) !void {
         if (status) |s| {
             try self.execBind("UPDATE agents SET status = ?2 WHERE id = ?1", .{ id, s });
@@ -606,6 +680,12 @@ pub const Db = struct {
         }
         if (prompt) |p| {
             try self.execBind("UPDATE agents SET prompt = ?2 WHERE id = ?1", .{ id, p });
+        }
+        if (clear_session_id) {
+            try self.execBind("UPDATE agents SET session_id = NULL, started_at = NULL WHERE id = ?1", .{id});
+        }
+        if (clear_assignment) {
+            try self.execBind("UPDATE agents SET assigned_task_id = NULL WHERE id = ?1", .{id});
         }
     }
 
@@ -849,25 +929,94 @@ fn dupeColumnTextOpt(allocator: Allocator, stmt: *c.sqlite3_stmt, col: c_int) ?[
 }
 
 fn resolveDbPath(allocator: Allocator) ![:0]u8 {
+    const configured = try loadConfiguredDbPath(allocator);
+    defer allocator.free(configured);
+    return try allocator.dupeZ(u8, configured);
+}
+
+pub fn ensureWorkspaceDbRoot(allocator: Allocator) ![]u8 {
+    const home = std.posix.getenv("HOME") orelse "/tmp";
+    const dir = try std.fs.path.join(allocator, &.{ home, ".cove", "workspaces" });
+    errdefer allocator.free(dir);
+    std.fs.cwd().makePath(dir) catch {};
+    return dir;
+}
+
+fn defaultWorkspaceDbPath(allocator: Allocator) ![]u8 {
+    const root = try ensureWorkspaceDbRoot(allocator);
+    defer allocator.free(root);
+    return std.fs.path.join(allocator, &.{ root, "default.cove.db" });
+}
+
+fn currentWorkspaceConfigPath(allocator: Allocator) ![]u8 {
     const home = std.posix.getenv("HOME") orelse "/tmp";
     const dir = try std.fs.path.join(allocator, &.{ home, ".cove" });
     defer allocator.free(dir);
-
-    // Ensure directory exists
     std.fs.cwd().makePath(dir) catch {};
+    return std.fs.path.join(allocator, &.{ dir, "current-workspace-path.txt" });
+}
 
-    const path = try std.fs.path.join(allocator, &.{ dir, "cove.db" });
-    defer allocator.free(path);
+fn loadConfiguredDbPath(allocator: Allocator) ![]u8 {
+    const config_path = try currentWorkspaceConfigPath(allocator);
+    defer allocator.free(config_path);
 
-    // Return null-terminated copy
-    return try allocator.dupeZ(u8, path);
+    const file = std.fs.openFileAbsolute(config_path, .{}) catch return defaultWorkspaceDbPath(allocator);
+    defer file.close();
+
+    const raw = try file.readToEndAlloc(allocator, 4096);
+    defer allocator.free(raw);
+
+    const trimmed = std.mem.trim(u8, raw, " \r\n\t");
+    if (trimmed.len == 0) {
+        return defaultWorkspaceDbPath(allocator);
+    }
+    return allocator.dupe(u8, trimmed);
+}
+
+pub fn saveConfiguredDbPath(allocator: Allocator, path: []const u8) !void {
+    const config_path = try currentWorkspaceConfigPath(allocator);
+    defer allocator.free(config_path);
+
+    var file = try std.fs.createFileAbsolute(config_path, .{ .truncate = true });
+    defer file.close();
+    try file.writeAll(path);
+}
+
+pub fn createManagedWorkspaceDbPath(allocator: Allocator, preferred_name: []const u8) ![]u8 {
+    const root = try ensureWorkspaceDbRoot(allocator);
+    defer allocator.free(root);
+
+    var sanitized: [96]u8 = undefined;
+    var len: usize = 0;
+    for (preferred_name) |ch| {
+        if (len == sanitized.len) break;
+        if (std.ascii.isAlphanumeric(ch)) {
+            sanitized[len] = std.ascii.toLower(ch);
+            len += 1;
+        } else if ((ch == '-' or ch == '_' or ch == '.') and len > 0) {
+            sanitized[len] = ch;
+            len += 1;
+        } else if (len > 0 and sanitized[len - 1] != '-') {
+            sanitized[len] = '-';
+            len += 1;
+        }
+    }
+    const base_name = std.mem.trimRight(u8, sanitized[0..len], "-.");
+    const file_name = if (base_name.len > 0)
+        try std.fmt.allocPrint(allocator, "{d}-{s}.cove.db", .{ std.time.timestamp(), base_name })
+    else
+        try std.fmt.allocPrint(allocator, "{d}-workspace.cove.db", .{std.time.timestamp()});
+    defer allocator.free(file_name);
+
+    return std.fs.path.join(allocator, &.{ root, file_name });
 }
 
 fn uniqueTestDbPath(allocator: Allocator) ![:0]u8 {
-    return std.fmt.allocPrintZ(
+    return std.fmt.allocPrintSentinel(
         allocator,
         "/tmp/nexus-db-test-{d}.sqlite",
         .{std.time.nanoTimestamp()},
+        0,
     );
 }
 

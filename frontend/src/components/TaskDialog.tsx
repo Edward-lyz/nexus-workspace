@@ -1,5 +1,5 @@
 import { useRef, useEffect, useState } from 'preact/hooks';
-import { createTask, ipc } from '../store';
+import { createTask } from '../store';
 
 interface Props {
   onClose: () => void;
@@ -12,19 +12,12 @@ export function TaskDialog({ onClose }: Props) {
   useEffect(() => { titleRef.current?.focus(); }, []);
 
   const submit = async () => {
-    const title = titleRef.current?.value.trim();
-    if (!title) return;
+    const prompt = titleRef.current?.value.trim();
+    if (!prompt) return;
 
-    const pane = await createTask(title, '...', priority);
+    // Use prompt directly as both title and description
+    await createTask(prompt, prompt, priority);
     onClose();
-
-    if (pane) {
-      // Fire-and-forget — result comes back via ai.result broadcast in app.tsx
-      ipc.call('ai.summarize', {
-        prompt: title,
-        pane_id: pane.id,
-      }).catch(() => {});
-    }
   };
 
   return (
@@ -53,7 +46,7 @@ export function TaskDialog({ onClose }: Props) {
           <button class="dialog-cancel" onClick={onClose}>Cancel</button>
           <button class="dialog-submit" onClick={() => void submit()}>Create</button>
         </div>
-        <div class="dialog-hint">AI will fill description in background</div>
+        <div class="dialog-hint">Task will auto-dispatch when an agent is available</div>
       </div>
     </div>
   );

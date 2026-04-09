@@ -3,7 +3,7 @@ import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { SerializeAddon } from '@xterm/addon-serialize';
 import '@xterm/xterm/css/xterm.css';
-import { ipc, focusedPaneId, focusPane, deletePane, BUILTIN_AGENTS, cloneAgentToAgent, expandPane, popoutPane, expandedPaneId, popoutPanes, closePopout, detectPlanMode } from '../store';
+import { ipc, focusedPaneId, focusPane, deletePane, archivePane, BUILTIN_AGENTS, cloneAgentToAgent, expandPane, popoutPane, expandedPaneId, popoutPanes, closePopout, markSessionActivity, shakeOncePaneId } from '../store';
 import { PlanModeOverlay } from './PlanModeOverlay';
 import type { PaneState } from '../store';
 
@@ -47,11 +47,23 @@ export function TerminalPane({ pane }: Props) {
   const bodyRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
+  const sessionRef = useRef<{ sessionId?: string; active: boolean }>({
+    sessionId: pane.sessionId,
+    active: Boolean(pane.sessionId) && pane.sessionStatus !== 'exited',
+  });
   const [showClone, setShowClone] = useState(false);
 
   const isFocused = focusedPaneId.value === pane.id;
   const isExpanded = expandedPaneId.value === pane.id;
   const isPopped = popoutPanes.value.has(pane.id);
+  const shouldShake = shakeOncePaneId.value === pane.id;
+
+  useEffect(() => {
+    sessionRef.current = {
+      sessionId: pane.sessionId,
+      active: Boolean(pane.sessionId) && pane.sessionStatus !== 'exited',
+    };
+  }, [pane.sessionId, pane.sessionStatus]);
 
   useEffect(() => {
     const container = bodyRef.current;
@@ -75,23 +87,34 @@ export function TerminalPane({ pane }: Props) {
     terminal.loadAddon(serializeAddon);
     terminal.open(container);
 
-    const snapshot = terminalSnapshotRegistry.get(pane.sessionId);
-    if (snapshot) {
-      terminal.write(snapshot);
-    }
-
     termRef.current = terminal;
     fitRef.current = fitAddon;
-    terminalRegistry.set(pane.sessionId, terminal);
+    if (pane.sessionId) {
+      terminalRegistry.set(pane.sessionId, terminal);
+    }
+
+    const snapshot = pane.sessionId ? terminalSnapshotRegistry.get(pane.sessionId) : undefined;
+    if (snapshot) {
+      terminal.write(snapshot);
+    } else {
+      void ipc.call<string | null>('scrollback.load', { node_id: pane.id }).then((saved) => {
+        if (saved) {
+          terminal.write(saved);
+        }
+      }).catch(() => {});
+    }
 
     requestAnimationFrame(() => fitAddon.fit());
 
     terminal.onData((data) => {
-      ipc.call('pty.write', { session_id: pane.sessionId, data });
+      if (!sessionRef.current.active || !sessionRef.current.sessionId) return;
+      markSessionActivity(sessionRef.current.sessionId);
+      void ipc.call('pty.write', { session_id: sessionRef.current.sessionId, data }).catch(() => {});
     });
 
     terminal.onResize(({ cols, rows }) => {
-      ipc.call('pty.resize', { session_id: pane.sessionId, cols, rows });
+      if (!sessionRef.current.active || !sessionRef.current.sessionId) return;
+      void ipc.call('pty.resize', { session_id: sessionRef.current.sessionId, cols, rows }).catch(() => {});
     });
 
     const resizeObserver = new ResizeObserver(() => {
@@ -101,8 +124,10 @@ export function TerminalPane({ pane }: Props) {
 
     return () => {
       resizeObserver.disconnect();
-      terminalSnapshotRegistry.set(pane.sessionId, serializeAddon.serialize());
-      terminalRegistry.delete(pane.sessionId);
+      if (pane.sessionId) {
+        terminalSnapshotRegistry.set(pane.sessionId, serializeAddon.serialize());
+        terminalRegistry.delete(pane.sessionId);
+      }
       terminal.dispose();
     };
   }, [pane.sessionId]);
@@ -115,7 +140,7 @@ export function TerminalPane({ pane }: Props) {
 
   const badgeClass = pane.kind === 'agent' ? 'pane-badge agent' : 'pane-badge shell';
   const badgeLabel = pane.kind === 'agent' ? (pane.agentName ?? 'Agent') : 'Shell';
-  const dotClass = pane.sessionStatus === 'exited' ? 'status-dot exited' : 'status-dot';
+  const dotClass = `status-dot ${pane.sessionStatus ?? 'idle'}`;
   const currentAgentId = BUILTIN_AGENTS.find(a => a.name === pane.agentName)?.id;
 
   const handleClone = async (targetAgentId: string) => {
@@ -124,8 +149,8 @@ export function TerminalPane({ pane }: Props) {
   };
 
   return (
-    <div
-      class={`pane ${isFocused ? 'focused' : ''}`}
+      <div
+      class={`pane ${isFocused ? 'focused' : ''} ${pane.needsAttention ? 'needs-attention' : ''} ${shouldShake ? 'shake-once' : ''}`}
       data-pane-id={pane.id}
       onMouseDown={() => focusPane(pane.id)}
     >
@@ -196,8 +221,17 @@ export function TerminalPane({ pane }: Props) {
           )}
           <span class={dotClass} />
           <button
+            class="btn-clone"
+            onClick={(e) => { e.stopPropagation(); archivePane(pane.id); }}
+            title="Archive session"
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/>
+            </svg>
+          </button>
+          <button
             class="btn-close"
-            onClick={(e) => { e.stopPropagation(); deletePane(pane.id); }}
+            onClick={(e) => { e.stopPropagation(); void deletePane(pane.id); }}
           >
             x
           </button>

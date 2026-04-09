@@ -4,7 +4,7 @@ import { TaskDialog } from './TaskDialog';
 import * as store from '../store';
 
 describe('TaskDialog', () => {
-  it('creates a task and asks the AI to summarize it', async () => {
+  it('creates a single-line task prompt without background summarization', async () => {
     store.spaces.value = [{ id: 'space-1', name: 'Default' }];
     store.activeSpaceId.value = 'space-1';
     store.schedulerSettings.value = { concurrency: 4, autoDispatch: false, defaultAgentId: 'claude' };
@@ -24,7 +24,6 @@ describe('TaskDialog', () => {
           created_at: 1,
         };
       }
-      if (method === 'ai.summarize') return null;
       throw new Error(`Unexpected method: ${method}`);
     });
 
@@ -37,19 +36,24 @@ describe('TaskDialog', () => {
     await fireEvent.click(screen.getByText('Create'));
 
     await waitFor(() => {
-      expect(ipcCall).toHaveBeenCalledWith('ai.summarize', {
-        prompt: 'Cover startup dispatch',
-        pane_id: 'task-1',
+      expect(ipcCall).toHaveBeenCalledWith('task.create', {
+        space_id: 'space-1',
+        title: 'Cover startup dispatch',
+        description: 'Cover startup dispatch',
+        priority: 'high',
+        parent_task_id: undefined,
       });
     });
 
     expect(onClose).toHaveBeenCalledTimes(1);
     expect(store.tasks.value.get('task-1')).toMatchObject({
       title: 'Cover startup dispatch',
+      description: 'Cover startup dispatch',
       priority: 'high',
     });
     expect(store.panes.value.find((pane) => pane.id === 'task-1')).toMatchObject({
       taskTitle: 'Cover startup dispatch',
+      taskDescription: 'Cover startup dispatch',
       taskPriority: 'high',
     });
   });

@@ -44,14 +44,24 @@ html, body {
   min-width: 0;
   min-height: 0;
   display: grid;
+  gap: var(--nx-gap);
+  padding: var(--nx-gap);
+  background: var(--nx-ink);
+}
+
+.tiling-grid.horizontal {
   grid-template-rows: repeat(2, 1fr);
   grid-auto-flow: column;
   grid-auto-columns: var(--grid-col-w, calc(50% - var(--nx-gap)));
-  gap: var(--nx-gap);
-  padding: var(--nx-gap);
   overflow-x: auto;
   overflow-y: hidden;
-  background: var(--nx-ink);
+}
+
+.tiling-grid.vertical {
+  grid-template-columns: minmax(0, 1fr);
+  grid-auto-rows: minmax(280px, 1fr);
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .tiling-grid.empty {
@@ -223,8 +233,8 @@ html, body {
   width: 24px;
   height: 24px;
   border-radius: var(--nx-radius-sm);
-  border: none;
-  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  background: rgba(255, 255, 255, 0.03);
   color: var(--nx-text-tertiary);
   font-size: var(--nx-text-sm);
   cursor: pointer;
@@ -233,6 +243,8 @@ html, body {
   justify-content: center;
   opacity: 0;
   transition: all var(--nx-transition-fast);
+  backdrop-filter: blur(14px) saturate(150%);
+  -webkit-backdrop-filter: blur(14px) saturate(150%);
 }
 
 .pane:hover .btn-close,
@@ -257,8 +269,8 @@ html, body {
   width: 24px;
   height: 24px;
   border-radius: var(--nx-radius-sm);
-  border: none;
-  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  background: rgba(255, 255, 255, 0.03);
   color: var(--nx-text-tertiary);
   font-size: var(--nx-text-sm);
   cursor: pointer;
@@ -267,6 +279,8 @@ html, body {
   justify-content: center;
   opacity: 0;
   transition: all var(--nx-transition-fast);
+  backdrop-filter: blur(14px) saturate(150%);
+  -webkit-backdrop-filter: blur(14px) saturate(150%);
 }
 
 .pane:hover .btn-expand,
@@ -331,9 +345,24 @@ html, body {
   width: 8px;
   height: 8px;
   border-radius: 50%;
+  background: var(--nx-warning);
+  box-shadow: 0 0 6px var(--nx-warning);
+}
+
+.status-dot.running {
   background: var(--nx-success);
   box-shadow: 0 0 6px var(--nx-success);
   animation: pulse 2s infinite;
+}
+
+.status-dot.idle {
+  background: var(--nx-warning);
+  box-shadow: 0 0 6px var(--nx-warning);
+}
+
+.status-dot.pending {
+  background: var(--nx-accent);
+  box-shadow: 0 0 6px var(--nx-accent);
 }
 
 .status-dot.exited {
@@ -352,31 +381,33 @@ html, body {
    ═══════════════════════════════════════════════════════════════════════════ */
 
 .task-pane {
-  background: var(--nx-ink-raised);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.03) 0%, transparent 36%),
+    linear-gradient(135deg, rgba(34, 211, 238, 0.06) 0%, transparent 55%),
+    var(--nx-glass-bg);
 }
 
 .task-pane .pane-header {
-  background: var(--nx-ink-elevated);
+  background: color-mix(in srgb, var(--nx-ink-elevated) 82%, transparent);
 }
 
 .task-meta {
   padding: var(--nx-space-4);
   border-bottom: 1px solid var(--nx-border-subtle);
+  display: flex;
+  flex-direction: column;
+  gap: var(--nx-space-3);
 }
 
-.task-title {
+.task-line {
   font-family: var(--nx-font-sans);
-  font-size: var(--nx-text-lg);
+  font-size: var(--nx-text-base);
   font-weight: 600;
   color: var(--nx-text-primary);
-  margin-bottom: var(--nx-space-2);
   line-height: var(--nx-leading-tight);
-}
-
-.task-desc {
-  font-size: var(--nx-text-sm);
-  color: var(--nx-text-secondary);
-  line-height: var(--nx-leading-relaxed);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .status-toggle {
@@ -386,10 +417,12 @@ html, body {
   padding: 4px var(--nx-space-2);
   border-radius: var(--nx-radius-sm);
   border: 1px solid currentColor;
-  background: transparent;
+  background: rgba(255, 255, 255, 0.04);
   cursor: pointer;
   transition: all var(--nx-transition-fast);
   opacity: 0.8;
+  backdrop-filter: blur(14px) saturate(150%);
+  -webkit-backdrop-filter: blur(14px) saturate(150%);
 }
 
 .status-toggle:hover {
@@ -426,20 +459,22 @@ html, body {
   width: 100%;
   padding: var(--nx-space-3);
   border-radius: var(--nx-radius-md);
-  border: 1px dashed var(--nx-border-strong);
-  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.04);
   color: var(--nx-text-secondary);
   font-family: var(--nx-font-mono);
   font-size: var(--nx-text-sm);
   cursor: pointer;
   transition: all var(--nx-transition-base);
+  backdrop-filter: blur(18px) saturate(160%);
+  -webkit-backdrop-filter: blur(18px) saturate(160%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
 
 .task-dispatch-btn:hover {
-  border-style: solid;
   border-color: var(--nx-accent);
   color: var(--nx-accent);
-  background: var(--nx-accent-subtle);
+  background: color-mix(in srgb, var(--nx-accent) 12%, rgba(255, 255, 255, 0.04));
 }
 
 .task-dispatch-options {
@@ -451,14 +486,16 @@ html, body {
 .task-agent-chip {
   padding: var(--nx-space-2) var(--nx-space-3);
   border-radius: var(--nx-radius-md);
-  border: 1px solid var(--nx-border);
-  background: var(--nx-surface-hover);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.04);
   color: var(--agent-color, var(--nx-text-secondary));
   font-family: var(--nx-font-mono);
   font-size: var(--nx-text-xs);
   font-weight: 500;
   cursor: pointer;
   transition: all var(--nx-transition-fast);
+  backdrop-filter: blur(14px) saturate(150%);
+  -webkit-backdrop-filter: blur(14px) saturate(150%);
 }
 
 .task-agent-chip:hover {
@@ -483,18 +520,20 @@ html, body {
 .task-context-btn {
   padding: var(--nx-space-1) var(--nx-space-3);
   border-radius: var(--nx-radius-sm);
-  border: 1px solid var(--nx-border-subtle);
-  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.04);
   color: var(--nx-text-tertiary);
   font-family: var(--nx-font-mono);
   font-size: var(--nx-text-xs);
   cursor: pointer;
   transition: all var(--nx-transition-fast);
+  backdrop-filter: blur(14px) saturate(150%);
+  -webkit-backdrop-filter: blur(14px) saturate(150%);
 }
 
 .task-context-btn:hover {
-  background: var(--nx-surface-hover);
-  border-color: var(--nx-border);
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(255, 255, 255, 0.12);
   color: var(--nx-text-secondary);
 }
 
@@ -527,7 +566,7 @@ html, body {
 }
 
 .task-terminal > .pane .pane-header {
-  background: var(--nx-ink-float);
+  background: color-mix(in srgb, var(--nx-ink-float) 80%, transparent);
   border-bottom: 1px solid var(--nx-border-subtle);
 }
 
@@ -679,8 +718,8 @@ html, body {
   width: 28px;
   height: 28px;
   border-radius: var(--nx-radius-sm);
-  border: 1px solid transparent;
-  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.04);
   color: var(--nx-text-tertiary);
   font-family: var(--nx-font-mono);
   font-size: var(--nx-text-sm);
@@ -689,12 +728,14 @@ html, body {
   align-items: center;
   justify-content: center;
   transition: all var(--nx-transition-fast);
+  backdrop-filter: blur(14px) saturate(150%);
+  -webkit-backdrop-filter: blur(14px) saturate(150%);
 }
 
 .sidebar-icon-btn:hover {
-  background: var(--nx-surface-hover);
+  background: rgba(255, 255, 255, 0.08);
   color: var(--nx-text-primary);
-  border-color: var(--nx-border-subtle);
+  border-color: rgba(255, 255, 255, 0.12);
 }
 
 .sidebar-icon-btn:active {
@@ -765,8 +806,8 @@ html, body {
 .sidebar-btn {
   padding: var(--nx-space-3) var(--nx-space-2);
   border-radius: var(--nx-radius-md);
-  border: 1px solid var(--nx-border);
-  background: var(--nx-surface-hover);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.04);
   color: var(--nx-text-secondary);
   font-family: var(--nx-font-mono);
   font-size: var(--nx-text-xs);
@@ -774,12 +815,15 @@ html, body {
   cursor: pointer;
   transition: all var(--nx-transition-fast);
   text-align: center;
+  backdrop-filter: blur(18px) saturate(160%);
+  -webkit-backdrop-filter: blur(18px) saturate(160%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
 
 .sidebar-btn:hover {
-  background: var(--nx-surface-active);
+  background: rgba(255, 255, 255, 0.08);
   color: var(--nx-text-primary);
-  border-color: var(--nx-border-strong);
+  border-color: rgba(255, 255, 255, 0.14);
   transform: translateY(-1px);
 }
 
@@ -972,8 +1016,13 @@ html, body {
   align-items: center;
   justify-content: space-between;
   padding: 0 var(--nx-space-3);
-  background: var(--nx-ink-raised);
-  border-top: 1px solid var(--nx-border-subtle);
+  background:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.04) 0%, transparent 48%, rgba(255, 255, 255, 0.04) 100%),
+    color-mix(in srgb, var(--nx-ink-raised) 84%, transparent);
+  border-top: 1px solid var(--nx-glass-border);
+  backdrop-filter: blur(18px) saturate(150%);
+  -webkit-backdrop-filter: blur(18px) saturate(150%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
 .statusbar-left,
@@ -998,6 +1047,8 @@ html, body {
   font-size: 10px;
   padding: 1px 6px;
   border-radius: 10px;
+  backdrop-filter: blur(10px) saturate(140%);
+  -webkit-backdrop-filter: blur(10px) saturate(140%);
 }
 
 .statusbar-badge.queued {
@@ -1042,8 +1093,8 @@ html, body {
   align-items: center;
   gap: 4px;
   padding: 2px 8px;
-  background: transparent;
-  border: 1px solid transparent;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.04);
   border-radius: var(--nx-radius-sm);
   color: var(--nx-text-tertiary);
   font-family: var(--nx-font-mono);
@@ -1896,8 +1947,8 @@ html, body {
   width: 24px;
   height: 24px;
   border-radius: var(--nx-radius-sm);
-  border: none;
-  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  background: rgba(255, 255, 255, 0.03);
   color: var(--nx-text-tertiary);
   font-size: var(--nx-text-sm);
   cursor: pointer;
@@ -1906,6 +1957,8 @@ html, body {
   justify-content: center;
   opacity: 0;
   transition: all var(--nx-transition-fast);
+  backdrop-filter: blur(14px) saturate(150%);
+  -webkit-backdrop-filter: blur(14px) saturate(150%);
 }
 
 .pane:hover .btn-edit {
@@ -2158,6 +2211,7 @@ html, body {
   font-family: var(--nx-font-mono);
   font-size: var(--nx-text-sm);
   color: var(--nx-text-secondary);
+  flex: 1;
 }
 
 .plan-mode-content {
@@ -2167,14 +2221,8 @@ html, body {
   padding: var(--nx-space-4);
 }
 
-.plan-mode-text {
-  font-family: var(--nx-font-mono);
-  font-size: var(--nx-text-sm);
-  color: var(--nx-text-primary);
-  white-space: pre-wrap;
-  word-break: break-word;
-  line-height: var(--nx-leading-relaxed);
-  margin: 0;
+.plan-mode-markdown {
+  min-height: 100%;
 }
 
 .plan-mode-actions {
@@ -3222,6 +3270,24 @@ html, body {
   animation: glass-pulse 2s ease-in-out infinite;
 }
 
+@keyframes pane-shake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-4px); }
+  40% { transform: translateX(4px); }
+  60% { transform: translateX(-3px); }
+  80% { transform: translateX(3px); }
+}
+
+/* needs-attention: only border highlight, no continuous animation */
+.pane.needs-attention {
+  border-color: rgba(251, 191, 36, 0.7);
+}
+
+/* shake-once: temporary class for one-time shake animation */
+.pane.shake-once {
+  animation: pane-shake 420ms ease-in-out;
+}
+
 /* Enhanced notification banner with glass */
 .notification-banner {
   backdrop-filter: blur(20px) saturate(180%);
@@ -3247,4 +3313,3 @@ html, body {
 .status-dot-sm[data-status="todo"]  { background: var(--nx-text-ghost); }
 .status-dot-sm[data-status="doing"] { background: var(--nx-warning); box-shadow: 0 0 4px var(--nx-warning); }
 .status-dot-sm[data-status="done"]  { background: var(--nx-success); }
-

@@ -2,7 +2,7 @@ import {
   schedulerSettings,
   agentPool,
   idleSlots,
-  runningAgentsCount,
+  runningSlotsCount,
   queuedTasks,
   BUILTIN_AGENTS,
   resizeAgentPool,
@@ -12,7 +12,7 @@ import {
 export function SchedulerPanel() {
   const settings = schedulerSettings.value;
   const queued = queuedTasks.value.length;
-  const running = runningAgentsCount.value;
+  const running = runningSlotsCount.value;
   const idle = idleSlots.value.length;
   const pool = Array.from(agentPool.value.values());
 

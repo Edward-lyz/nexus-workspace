@@ -38,8 +38,12 @@ describe('Sidebar', () => {
     const createObjectURL = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:workspace');
     const revokeObjectURL = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
     const anchorClick = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    const exportWorkspace = vi.spyOn(store, 'exportWorkspace').mockResolvedValue({
+      filename: 'workspace.cove.db',
+      bytes: new Uint8Array([1, 2, 3]),
+    });
     const ipcCall = vi.spyOn(store.ipc, 'call').mockImplementation(async (method: string) => {
-      if (method === 'workspace.export') return { json: '{"workspace":true}' };
+      if (method === 'space.create') return { id: 'space-test' };
       throw new Error(`Unexpected method: ${method}`);
     });
 
@@ -57,9 +61,10 @@ describe('Sidebar', () => {
     await fireEvent.click(screen.getByTitle('Export Workspace'));
 
     await waitFor(() => {
-      expect(ipcCall).toHaveBeenCalledWith('workspace.export', { workspace_id: 'ws-1' });
+      expect(exportWorkspace).toHaveBeenCalledTimes(1);
       expect(anchorClick).toHaveBeenCalledTimes(1);
     });
+    expect(ipcCall).toHaveBeenCalledWith('space.create', expect.objectContaining({ workspace_id: 'ws-1', name: 'QA' }));
     expect(createObjectURL).toHaveBeenCalledTimes(1);
     expect(revokeObjectURL).toHaveBeenCalledWith('blob:workspace');
   });
@@ -69,35 +74,16 @@ describe('Sidebar', () => {
     store.spaces.value = [{ id: 'space-1', name: 'Default' }];
     store.activeSpaceId.value = 'space-1';
 
-    const ipcCall = vi.spyOn(store.ipc, 'call').mockImplementation(async (method: string) => {
-      if (method === 'workspace.import') return null;
-      if (method === 'state.hydrate') {
-        return {
-          workspaces: [
-            {
-              id: 'ws-1',
-              name: 'Workspace',
-              path: '/repo',
-              spaces: [
-                { id: 'space-1', workspace_id: 'ws-1', name: 'Default', nodes: [], tasks: [], agents: [] },
-              ],
-            },
-          ],
-          settings: {},
-        };
-      }
-      throw new Error(`Unexpected method: ${method}`);
-    });
+    const importWorkspace = vi.spyOn(store, 'importWorkspace').mockResolvedValue();
 
     const { container } = render(<Sidebar onAddTask={vi.fn()} onAddAgent={vi.fn()} onAddNote={vi.fn()} />);
 
     const input = container.querySelector('input[type="file"]') as HTMLInputElement;
-    const file = new File(['{"workspace":true}'], 'workspace.json', { type: 'application/json' });
+    const file = new File(['sqlite'], 'workspace.cove.db', { type: 'application/x-sqlite3' });
     await fireEvent.change(input, { target: { files: [file] } });
 
     await waitFor(() => {
-      expect(ipcCall).toHaveBeenCalledWith('workspace.import', { json: '{"workspace":true}' });
-      expect(ipcCall).toHaveBeenCalledWith('state.hydrate', {});
+      expect(importWorkspace).toHaveBeenCalledWith(file);
     });
   });
 });

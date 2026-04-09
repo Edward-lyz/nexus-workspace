@@ -10,8 +10,10 @@ describe('AgentDialog', () => {
     store.workspacePath.value = '/repo';
 
     const onClose = vi.fn();
-    const ipcCall = vi.spyOn(store.ipc, 'call').mockImplementation(async (method: string) => {
+    const ipcCall = vi.spyOn(store.ipc, 'call').mockImplementation(async (method: string, params?: Record<string, unknown>) => {
+      if (method === 'node.create') return { id: params?.id ?? 'pane-1' };
       if (method === 'pty.spawn') return { session_id: 'session-7' };
+      if (method === 'agent.create') return { id: params?.id ?? 'pane-1' };
       throw new Error(`Unexpected method: ${method}`);
     });
 
@@ -20,11 +22,17 @@ describe('AgentDialog', () => {
     await fireEvent.click(screen.getByText('Codex CLI'));
 
     await waitFor(() => {
+      expect(ipcCall).toHaveBeenCalledWith('node.create', expect.objectContaining({
+        id: expect.any(String),
+        kind: 'agent',
+        space_id: 'space-1',
+      }));
       expect(ipcCall).toHaveBeenCalledWith('pty.spawn', {
         kind: 'agent',
         space_id: 'space-1',
         cwd: '/repo',
         command: 'codex',
+        node_id: expect.any(String),
       });
     });
 

@@ -1,4 +1,4 @@
-import { panes, runningAgentsCount, queuedTasks, schedulerSettings } from '../store';
+import { panes, activeSessionsCount, queuedTasks, schedulerSettings } from '../store';
 
 interface StatusBarProps {
   onOpenSettings: () => void;
@@ -8,8 +8,8 @@ interface StatusBarProps {
 export function StatusBar({ onOpenSettings, onOpenHistory }: StatusBarProps) {
   const allPanes = panes.value;
   const tasks = allPanes.filter(p => p.kind === 'task').length;
-  const sessions = allPanes.filter(p => p.kind === 'agent' || p.kind === 'shell').length;
-  const running = runningAgentsCount.value;
+  const sessions = activeSessionsCount.value;
+  const running = activeSessionsCount.value;
   const queued = queuedTasks.value.length;
   const autoDispatch = schedulerSettings.value.autoDispatch;
 
@@ -28,7 +28,7 @@ export function StatusBar({ onOpenSettings, onOpenHistory }: StatusBarProps) {
           </span>
         )}
         {running > 0 && (
-          <span class="statusbar-badge running" title={`${running} agent${running > 1 ? 's' : ''} running`}>
+          <span class="statusbar-badge running" title={`${running} session${running > 1 ? 's' : ''} running`}>
             <span class="statusbar-pulse" />
             {running} running
           </span>

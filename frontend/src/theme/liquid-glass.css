@@ -1,0 +1,500 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   NOTION STYLE — Clean, minimal UI
+   No glass effects, no blur, no animations. Just clean surfaces.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+:root {
+  /* Notion-style shadows (subtle) */
+  --notion-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --notion-shadow-md: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.04);
+  --notion-shadow-lg: 0 4px 6px rgba(0, 0, 0, 0.06), 0 2px 4px rgba(0, 0, 0, 0.04);
+
+  /* Transition */
+  --notion-transition: 120ms ease-out;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   PANE — Clean card surfaces
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.pane {
+  position: relative;
+  background: var(--nx-ink-raised);
+  border: 1px solid var(--nx-border);
+  border-radius: var(--nx-radius-md);
+  box-shadow: var(--notion-shadow-sm);
+  transition: border-color var(--notion-transition), box-shadow var(--notion-transition);
+}
+
+/* Remove all pseudo-element decorations */
+.pane::before,
+.pane::after {
+  display: none;
+}
+
+/* Hover: subtle lift */
+.pane:hover {
+  border-color: var(--nx-border-strong);
+  box-shadow: var(--notion-shadow-md);
+}
+
+/* Focused state: accent border only */
+.pane.focused {
+  border-color: var(--nx-accent);
+  box-shadow: var(--notion-shadow-md);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   BUTTONS — Notion Style
+   Clean, minimal, functional. No gimmicks.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Reset all buttons to Notion baseline */
+:is(
+  .sidebar-icon-btn,
+  .sidebar-btn,
+  .task-dispatch-btn,
+  .task-context-btn,
+  .task-agent-chip,
+  .dialog-submit,
+  .dialog-cancel,
+  .settings-data-btn,
+  .pane-icon-btn,
+  .plan-btn,
+  .task-clone-options button,
+  .plan-reject-buttons button,
+  .statusbar-btn,
+  .cwd-preset
+) {
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  transition: background 80ms ease-out;
+}
+
+:is(
+  .sidebar-icon-btn,
+  .sidebar-btn,
+  .task-dispatch-btn,
+  .task-context-btn,
+  .task-agent-chip,
+  .dialog-submit,
+  .dialog-cancel,
+  .settings-data-btn,
+  .pane-icon-btn,
+  .plan-btn,
+  .task-clone-options button,
+  .plan-reject-buttons button,
+  .statusbar-btn,
+  .cwd-preset
+):hover {
+  background: rgba(255, 255, 255, 0.055);
+}
+
+:is(
+  .sidebar-icon-btn,
+  .sidebar-btn,
+  .task-dispatch-btn,
+  .task-context-btn,
+  .task-agent-chip,
+  .dialog-submit,
+  .dialog-cancel,
+  .settings-data-btn,
+  .pane-icon-btn,
+  .plan-btn,
+  .task-clone-options button,
+  .plan-reject-buttons button,
+  .statusbar-btn,
+  .cwd-preset
+):active {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/* Kill pseudo-elements */
+:is(
+  .sidebar-icon-btn,
+  .sidebar-btn,
+  .task-dispatch-btn,
+  .task-context-btn,
+  .task-agent-chip,
+  .dialog-submit,
+  .dialog-cancel,
+  .settings-data-btn,
+  .pane-icon-btn,
+  .plan-btn,
+  .task-clone-options button,
+  .plan-reject-buttons button
+)::before,
+:is(
+  .sidebar-icon-btn,
+  .sidebar-btn,
+  .task-dispatch-btn,
+  .task-context-btn,
+  .task-agent-chip,
+  .dialog-submit,
+  .dialog-cancel,
+  .settings-data-btn,
+  .pane-icon-btn,
+  .plan-btn,
+  .task-clone-options button,
+  .plan-reject-buttons button
+)::after {
+  display: none;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Icon Buttons
+   ───────────────────────────────────────────────────────────────────────── */
+
+.sidebar-icon-btn,
+.pane-icon-btn {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  color: var(--nx-text-tertiary);
+}
+
+.sidebar-icon-btn:hover,
+.pane-icon-btn:hover {
+  color: var(--nx-text-primary);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Sidebar Action Buttons — "+ Task", "+ Agent", "+ Note"
+   ───────────────────────────────────────────────────────────────────────── */
+
+.sidebar-btn {
+  padding: 6px 10px;
+  font-size: var(--nx-text-xs);
+  font-weight: 500;
+  color: var(--nx-text-secondary);
+  border-radius: 4px;
+}
+
+.sidebar-btn:hover {
+  color: var(--nx-text-primary);
+}
+
+.sidebar-btn.task:hover { color: var(--nx-accent); }
+.sidebar-btn.agent:hover { color: #cba6f7; }
+.sidebar-btn.note:hover { color: var(--nx-warning); }
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Dialog Buttons
+   ───────────────────────────────────────────────────────────────────────── */
+
+.dialog-cancel,
+.dialog-submit {
+  padding: 6px 12px;
+  font-size: var(--nx-text-sm);
+  font-weight: 500;
+  border-radius: 4px;
+}
+
+.dialog-cancel {
+  color: var(--nx-text-secondary);
+}
+
+.dialog-cancel:hover {
+  background: rgba(255, 255, 255, 0.055);
+  color: var(--nx-text-primary);
+}
+
+.dialog-submit {
+  background: var(--nx-accent);
+  color: var(--nx-ink);
+}
+
+.dialog-submit:hover {
+  background: color-mix(in srgb, var(--nx-accent) 85%, white);
+}
+
+.dialog-submit:active {
+  background: var(--nx-accent-dim);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Task Dispatch & Chips
+   ───────────────────────────────────────────────────────────────────────── */
+
+.task-dispatch-btn {
+  padding: 8px 12px;
+  border-radius: 4px;
+  color: var(--nx-text-secondary);
+  border: 1px dashed rgba(255, 255, 255, 0.15);
+  background: transparent;
+}
+
+.task-dispatch-btn:hover {
+  border-color: var(--nx-accent);
+  color: var(--nx-accent);
+  background: rgba(34, 211, 238, 0.05);
+}
+
+.task-agent-chip {
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: var(--nx-text-xs);
+  color: var(--agent-color, var(--nx-text-secondary));
+}
+
+.task-agent-chip:hover {
+  background: color-mix(in srgb, var(--agent-color, var(--nx-accent)) 10%, transparent);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Plan Buttons
+   ───────────────────────────────────────────────────────────────────────── */
+
+.plan-btn {
+  padding: 6px 12px;
+  border-radius: 4px;
+  font-weight: 500;
+}
+
+.plan-reject-buttons button {
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: var(--nx-text-xs);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Status Bar Buttons
+   ───────────────────────────────────────────────────────────────────────── */
+
+.statusbar-btn {
+  padding: 2px 6px;
+  font-size: 10px;
+  border-radius: 3px;
+  color: var(--nx-text-tertiary);
+}
+
+.statusbar-btn:hover {
+  color: var(--nx-text-secondary);
+}
+
+.statusbar-btn.settings:hover {
+  color: var(--nx-accent);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   CWD Preset
+   ───────────────────────────────────────────────────────────────────────── */
+
+.cwd-preset {
+  padding: 2px 6px;
+  font-size: var(--nx-text-xs);
+  border-radius: 3px;
+  color: var(--nx-text-tertiary);
+}
+
+.cwd-preset:hover {
+  color: var(--nx-accent);
+  background: rgba(34, 211, 238, 0.08);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Toggle Switch — Notion style
+   ───────────────────────────────────────────────────────────────────────── */
+
+.liquid-toggle {
+  position: relative;
+  width: 36px;
+  height: 20px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.1);
+  border: none;
+  cursor: pointer;
+  transition: background 150ms ease;
+}
+
+.liquid-toggle::before {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  transition: transform 150ms ease;
+}
+
+.liquid-toggle.active {
+  background: var(--nx-accent);
+}
+
+.liquid-toggle.active::before {
+  transform: translateX(16px);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   LIGHT THEME
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+[data-theme="light"] :is(
+  .sidebar-icon-btn,
+  .sidebar-btn,
+  .task-dispatch-btn,
+  .task-context-btn,
+  .task-agent-chip,
+  .dialog-cancel,
+  .settings-data-btn,
+  .pane-icon-btn,
+  .plan-btn,
+  .task-clone-options button,
+  .plan-reject-buttons button,
+  .statusbar-btn,
+  .cwd-preset
+) {
+  background: transparent;
+}
+
+[data-theme="light"] :is(
+  .sidebar-icon-btn,
+  .sidebar-btn,
+  .task-dispatch-btn,
+  .task-context-btn,
+  .task-agent-chip,
+  .dialog-cancel,
+  .settings-data-btn,
+  .pane-icon-btn,
+  .plan-btn,
+  .task-clone-options button,
+  .plan-reject-buttons button,
+  .statusbar-btn,
+  .cwd-preset
+):hover {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+[data-theme="light"] .dialog-submit {
+  background: var(--nx-accent);
+  color: white;
+}
+
+[data-theme="light"] .task-dispatch-btn {
+  border-color: rgba(0, 0, 0, 0.15);
+}
+
+[data-theme="light"] .task-dispatch-btn:hover {
+  background: rgba(13, 148, 136, 0.05);
+}
+
+[data-theme="light"] .liquid-toggle {
+  background: rgba(0, 0, 0, 0.1);
+}
+
+[data-theme="light"] .liquid-toggle::before {
+  background: white;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   SIDEBAR — Clean solid panel
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.sidebar {
+  background: var(--nx-ink-raised);
+  border-right: 1px solid var(--nx-border);
+}
+
+/* Remove pseudo-element decorations */
+.sidebar::after {
+  display: none;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   PANE HEADER — Simple header
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.pane-header {
+  background: var(--nx-ink-elevated);
+  border-bottom: 1px solid var(--nx-border-subtle);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   DIALOG — Clean floating panel
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.dialog {
+  background: var(--nx-ink-float);
+  border: 1px solid var(--nx-border);
+  border-radius: var(--nx-radius-lg);
+  box-shadow: var(--notion-shadow-lg);
+}
+
+/* Remove pseudo-element decorations */
+.dialog::before {
+  display: none;
+}
+
+.dialog-overlay {
+  background: rgba(0, 0, 0, 0.5);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   CONTEXT MENU — Clean dropdown
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.context-menu {
+  background: var(--nx-ink-float);
+  border: 1px solid var(--nx-border);
+  border-radius: var(--nx-radius-sm);
+  box-shadow: var(--notion-shadow-lg);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   STATUS BAR — Clean strip
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.statusbar {
+  background: var(--nx-ink-raised);
+  border-top: 1px solid var(--nx-border-subtle);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   TASK PANE SPECIFICS
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.task-pane .task-meta {
+  background: transparent;
+  border-bottom: 1px solid var(--nx-border-subtle);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   LIGHT THEME OVERRIDES — Notion style
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+[data-theme="light"] .pane {
+  background: var(--nx-ink-raised);
+  border-color: var(--nx-border);
+}
+
+[data-theme="light"] .sidebar {
+  background: var(--nx-ink-raised);
+  border-right-color: var(--nx-border);
+}
+
+[data-theme="light"] .dialog {
+  background: var(--nx-ink-float);
+  border-color: var(--nx-border);
+  box-shadow: var(--notion-shadow-lg);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   REMOVE ALL LIQUID GLASS ANIMATIONS
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* No shimmer animation on focused pane */
+.pane.focused::before {
+  animation: none;
+}

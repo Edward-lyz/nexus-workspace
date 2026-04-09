@@ -2,12 +2,13 @@ import { useRef, useEffect, useState } from 'preact/hooks';
 import { TerminalPane } from './TerminalPane';
 import { TaskPane } from './TaskPane';
 import { TaskEditDialog } from './TaskEditDialog';
-import { activeSpaceGridPanes } from '../store';
+import { activeSpaceGridPanes, layoutMode } from '../store';
 import type { PaneState } from '../store';
 
 export function TilingGrid() {
   const gridRef = useRef<HTMLDivElement>(null);
   const panesVal = activeSpaceGridPanes.value;
+  const mode = layoutMode.value;
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
 
   function renderPane(pane: PaneState) {
@@ -27,14 +28,16 @@ export function TilingGrid() {
     if (!el) return;
     const gap = 3; // --cove-gap
     const update = (w: number) => {
-      const colW = Math.max(180, Math.floor((w - gap * 3) / 2));
+      const colW = mode === 'vertical'
+        ? Math.max(280, w - gap * 2)
+        : Math.max(180, Math.floor((w - gap * 3) / 2));
       el.style.setProperty('--grid-col-w', `${colW}px`);
     };
     const ro = new ResizeObserver(([entry]) => update(entry.contentRect.width));
     ro.observe(el);
     update(el.clientWidth);
     return () => ro.disconnect();
-  }, []);
+  }, [mode]);
 
   if (panesVal.length === 0) {
     return (
@@ -59,7 +62,7 @@ export function TilingGrid() {
 
   return (
     <>
-      <div class="tiling-grid" ref={gridRef}>
+      <div class={`tiling-grid ${mode}`} ref={gridRef}>
         {panesVal.map(pane => (
           <div key={pane.id} class="grid-cell">
             {renderPane(pane)}

@@ -1,12 +1,13 @@
 import { useState } from 'preact/hooks';
 import {
-  focusedPaneId, focusPane, deletePane, updatePane, getLinkedPane,
-  spawnAgentForTask, spawnShellForTask, BUILTIN_AGENTS, exportTaskContext, cloneTaskToAgent,
-  expandPane, getAgentForTask, tasks, getSubtasks, getTaskAncestors,
-  expandedPaneId, popoutPanes, popoutPane, closePopout, spawnBestOfN, createTask, allAgents,
-  type TaskEntity,
+  focusedPaneId, focusPane, deletePane, archivePane, updatePane, getLinkedPane,
+  spawnAgentForTask, spawnShellForTask, exportTaskContext, cloneTaskToAgent,
+  expandPane, getAgentForTask,
+  expandedPaneId, popoutPanes, popoutPane, closePopout, spawnBestOfN, allAgents,
+  shakeOncePaneId,
 } from '../store';
 import { TerminalPane, terminalRegistry } from './TerminalPane';
+import { showNotificationBanner } from './NotificationBanner';
 import type { PaneState } from '../store';
 
 const STATUS_LABELS: Record<string, string> = {
@@ -28,24 +29,57 @@ export function TaskPane({ pane, onEdit }: Props) {
   const isFocused = focusedPaneId.value === pane.id;
   const isExpanded = expandedPaneId.value === pane.id;
   const isPopped = popoutPanes.value.has(pane.id);
+  const shouldShake = shakeOncePaneId.value === pane.id;
   const linked = getLinkedPane(pane.id);
   const assignedAgent = getAgentForTask(pane.id);
-  const taskEntity = tasks.value.get(pane.id);
-  const subtasks = getSubtasks(pane.id);
-  const ancestors = getTaskAncestors(pane.id);
   const [showDispatch, setShowDispatch] = useState(false);
   const [showClone, setShowClone] = useState(false);
   const [showBestOfN, setShowBestOfN] = useState(false);
   const [bestOfNCount, setBestOfNCount] = useState(3);
-  const [showAddSubtask, setShowAddSubtask] = useState(false);
-  const [subtaskTitle, setSubtaskTitle] = useState('');
 
   const statusKey = pane.taskStatus ?? 'todo';
   const nextStatus = statusKey === 'todo' ? 'doing' : statusKey === 'doing' ? 'done' : 'todo';
+  const taskLine = pane.taskDescription?.trim() || pane.taskTitle?.trim() || 'Untitled task';
+
+  const copyContext = async (text: string): Promise<boolean> => {
+    if (navigator.clipboard?.writeText) {
+      try {
+        await navigator.clipboard.writeText(text);
+        return true;
+      } catch {}
+    }
+
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.setAttribute('readonly', 'true');
+    textarea.style.position = 'fixed';
+    textarea.style.opacity = '0';
+    document.body.appendChild(textarea);
+    textarea.select();
+    const success = typeof document.execCommand === 'function' && document.execCommand('copy');
+    document.body.removeChild(textarea);
+    return success;
+  };
+
+  const downloadContext = (text: string) => {
+    const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${(pane.taskTitle ?? 'task').replace(/[^\w.-]+/g, '-').toLowerCase() || 'task'}-context.txt`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
 
   const handleExportContext = async () => {
     const context = await exportTaskContext(pane.id, terminalRegistry);
-    await navigator.clipboard.writeText(context);
+    if (await copyContext(context)) {
+      showNotificationBanner('Context exported', 'Task context copied to clipboard.');
+      return;
+    }
+
+    downloadContext(context);
+    showNotificationBanner('Context exported', 'Clipboard unavailable, downloaded as a text file.');
   };
 
   const handleCloneToAgent = async (agentId: string) => {
@@ -60,15 +94,8 @@ export function TaskPane({ pane, onEdit }: Props) {
     setShowBestOfN(false);
   };
 
-  const handleAddSubtask = async () => {
-    if (!subtaskTitle.trim()) return;
-    await createTask(subtaskTitle.trim(), '', 'medium', pane.id);
-    setSubtaskTitle('');
-    setShowAddSubtask(false);
-  };
-
   return (
-    <div class={`pane task-pane ${isFocused ? 'focused' : ''}`} data-pane-id={pane.id} onMouseDown={() => focusPane(pane.id)}>
+    <div class={`pane task-pane ${isFocused ? 'focused' : ''} ${pane.needsAttention ? 'needs-attention' : ''} ${shouldShake ? 'shake-once' : ''}`} data-pane-id={pane.id} onMouseDown={() => focusPane(pane.id)}>
       <div class="pane-header">
         <span class="pane-title">
           <span class="pane-badge task">Task</span>
@@ -108,6 +135,15 @@ export function TaskPane({ pane, onEdit }: Props) {
             )}
           </button>
           <button
+            class="btn-edit"
+            onClick={(e) => { e.stopPropagation(); archivePane(pane.id); }}
+            title="Archive task"
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/>
+            </svg>
+          </button>
+          <button
             class={`btn-expand ${isExpanded ? 'active' : ''}`}
             onClick={(e) => {
               e.stopPropagation();
@@ -125,66 +161,12 @@ export function TaskPane({ pane, onEdit }: Props) {
               </svg>
             )}
           </button>
-          <button class="btn-close" onClick={(e) => { e.stopPropagation(); deletePane(pane.id); }}>x</button>
+          <button class="btn-close" onClick={(e) => { e.stopPropagation(); void deletePane(pane.id); }}>x</button>
         </span>
       </div>
 
       <div class="task-meta">
-        <div class="task-title" onDblClick={() => onEdit?.(pane.id)}>{pane.taskTitle}</div>
-        {pane.taskDescription && <div class="task-desc">{pane.taskDescription}</div>}
-
-        {/* Show subtasks inline tree */}
-        {subtasks.length > 0 && (
-          <div class="task-subtasks-list">
-            <div class="task-subtasks-header">
-              <span class="task-subtasks-label">Subtasks ({subtasks.length})</span>
-            </div>
-            {subtasks.map(st => (
-              <div key={st.id} class={`task-subtask-item status-${st.status}`}>
-                <span class={`subtask-dot status-${st.status}`} />
-                <span class="task-subtask-title">{st.title}</span>
-                <span class={`subtask-status-badge ${st.status}`}>{st.status}</span>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* Add sub-task inline */}
-        {showAddSubtask ? (
-          <div class="subtask-add-form">
-            <input
-              class="subtask-input"
-              autoFocus
-              placeholder="Sub-task title..."
-              value={subtaskTitle}
-              onInput={(e) => setSubtaskTitle((e.target as HTMLInputElement).value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') handleAddSubtask();
-                if (e.key === 'Escape') { setShowAddSubtask(false); setSubtaskTitle(''); }
-              }}
-            />
-            <div class="subtask-add-actions">
-              <button class="subtask-btn-add" onClick={handleAddSubtask}>Add</button>
-              <button class="subtask-btn-cancel" onClick={() => { setShowAddSubtask(false); setSubtaskTitle(''); }}>×</button>
-            </div>
-          </div>
-        ) : (
-          <button class="subtask-add-trigger" onClick={() => setShowAddSubtask(true)}>
-            + Sub-task
-          </button>
-        )}
-
-        {/* Show breadcrumb if this is a subtask */}
-        {ancestors.length > 0 && (
-          <div class="task-breadcrumb">
-            {ancestors.map((a, i) => (
-              <span key={a.id}>
-                {i > 0 && ' > '}
-                <span class="breadcrumb-item">{a.title}</span>
-              </span>
-            ))}
-          </div>
-        )}
+        <div class="task-line" title={taskLine} onDblClick={() => onEdit?.(pane.id)}>{taskLine}</div>
 
         {!linked && (
           <div class="task-actions">
@@ -247,11 +229,13 @@ export function TaskPane({ pane, onEdit }: Props) {
             <span class={`sidebar-badge ${linked.kind}`}>
               {linked.kind === 'agent' ? (linked.agentName ?? 'Agent') : 'Shell'}
             </span>
-            <span class="task-link-id">{linked.sessionId}</span>
+            <span class="task-link-id">{linked.sessionId ?? 'pending'}</span>
+            {linked.sessionStatus === 'pending' && <span class="task-link-status">pending</span>}
+            {linked.sessionStatus === 'idle' && <span class="task-link-status">idle</span>}
             {linked.sessionStatus === 'exited' && <span class="task-link-status">ended</span>}
             {assignedAgent && (
-              <span class="task-slot-badge" title={`Assigned to ${assignedAgent.slotId}`}>
-                {assignedAgent.slotId.replace('slot-', '#')}
+              <span class="task-slot-badge" title={`Assigned to ${assignedAgent.id}`}>
+                {assignedAgent.id.replace('slot-', '#')}
               </span>
             )}
           </div>
@@ -269,7 +253,7 @@ export function TaskPane({ pane, onEdit }: Props) {
               </button>
             ) : (
               <div class="task-clone-options">
-                {BUILTIN_AGENTS.filter(a => a.id !== (BUILTIN_AGENTS.find(x => x.name === linked.agentName)?.id)).map(a => (
+                {allAgents.value.filter(a => a.name !== linked.agentName).map(a => (
                   <button
                     key={a.id}
                     class="task-agent-chip"

@@ -14,10 +14,11 @@ import { PopoutContainer } from './components/PopoutPane';
 import { terminalRegistry } from './components/TerminalPane';
 import {
   ipc, hydrateState, markSessionExited, updatePane,
-   activeSpace, focusedPaneId, panes, deletePane,
-   initializeAgentPool, schedulerSettings, detectPlanMode,
-   loadCustomAgents, loadExecutionHistory, popoutPane,
-   planModeAlert, expandPane, loadPopoutPositions, currentWorkspaceId, loadSchedulerSettings,
+  activeSpace, focusedPaneId, panes, deletePane,
+  initializeAgentPool, schedulerSettings, detectPlanMode,
+  popoutPane,
+  planModeAlert, expandPane, loadPopoutPositions, currentWorkspaceId, loadSchedulerSettings,
+  loadWorkspaceUiState, markSessionActivity,
 } from './store';
 import type { SpaceState } from './store';
 
@@ -49,6 +50,7 @@ export function App() {
       ipc.on('pty.data', (params) => {
         const { session_id, data } = params as { session_id: string; data: string };
         const term = terminalRegistry.get(session_id);
+        const pane = panes.value.find((entry) => entry.sessionId === session_id);
         if (term) {
           const bin = atob(data);
           const bytes = new Uint8Array(bin.length);
@@ -57,6 +59,10 @@ export function App() {
         }
         // Detect plan mode transitions
         const decoded = atob(data);
+        if (pane) {
+          void ipc.call('scrollback.save', { node_id: pane.id, data: decoded }).catch(() => {});
+        }
+        markSessionActivity(session_id, decoded);
         detectPlanMode(session_id, decoded);
       });
 
@@ -64,7 +70,7 @@ export function App() {
         const { session_id } = params as { session_id: string };
         const term = terminalRegistry.get(session_id);
         if (term) term.write('\r\n\x1b[90m[session ended]\x1b[0m\r\n');
-        markSessionExited(session_id);
+        void markSessionExited(session_id);
       });
 
       ipc.on('notification', (params) => {
@@ -79,13 +85,15 @@ export function App() {
 
       // Await hydration so the active space is set before initializing the agent pool
       await hydrateState();
+
       if (currentWorkspaceId.value) {
         await loadSchedulerSettings(currentWorkspaceId.value);
       }
+
       // Initialize agent pool after space is known
       await initializeAgentPool(schedulerSettings.peek().concurrency);
-      loadCustomAgents();
-      loadExecutionHistory();
+
+      await loadWorkspaceUiState();
       // Restore popout positions from last session
       loadPopoutPositions();
     })();
@@ -97,7 +105,7 @@ export function App() {
     if (!alert) return;
     showNotificationBanner(
       `${alert.agentName} — Plan Ready`,
-      'An agent has generated a plan. Review and approve or request changes.'
+      'Plan has been generated. Review the markdown output and approve or request changes.'
     );
     // Focus the pane to make overlay visible
     expandPane(alert.paneId);
@@ -119,7 +127,7 @@ export function App() {
       }
       if (meta && e.key === 'w') {
         e.preventDefault();
-        if (focusedPaneId.value) deletePane(focusedPaneId.value);
+        if (focusedPaneId.value) void deletePane(focusedPaneId.value);
         return;
       }
       if (meta && e.key >= '1' && e.key <= '9') {
@@ -167,10 +175,10 @@ export function App() {
             { label: 'Copy', shortcut: '\u2318C', action: () => document.execCommand('copy') },
             { label: 'Paste', shortcut: '\u2318V', action: () => document.execCommand('paste') },
             { separator: true },
-            { label: 'Close Pane', shortcut: '\u2318W', danger: true, action: () => {
-              if (paneId) deletePane(paneId);
-              else if (focusedPaneId.value) deletePane(focusedPaneId.value);
-            }},
+             { label: 'Close Pane', shortcut: '\u2318W', danger: true, action: () => {
+               if (paneId) void deletePane(paneId);
+               else if (focusedPaneId.value) void deletePane(focusedPaneId.value);
+             }},
           ],
         });
       }

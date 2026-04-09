@@ -1,13 +1,13 @@
 import { useState, useRef } from 'preact/hooks';
 import {
   spaces, activeSpaceId, activeSpacePanes, activeSpaceNotes,
-  panes, notes, focusPane, createSpace, deletePane,
+  panes, archivedPanes, notes, focusPane, createSpace, deletePane, unarchivePane,
   editingNoteId, updateNote, deleteNote,
   exportWorkspace, importWorkspace, currentWorkspaceId,
   workspacePath, setWorkspacePath, ipc,
-  activeSpaceRootTasks, getSubtasks, tasks,
+  activeSpaceTasks, tasks,
 } from '../store';
-import type { SpaceState, TaskEntity } from '../store';
+import type { SpaceState } from '../store';
 
 interface Props {
   onAddAgent: (space: SpaceState) => void;
@@ -29,6 +29,7 @@ export function Sidebar({ onAddAgent, onAddTask, onAddNote }: Props) {
   const importInputRef = useRef<HTMLInputElement>(null);
 
   const terminals = currentPanes.filter(p => (p.kind === 'shell' || p.kind === 'agent') && !p.embedded);
+  const archivedForSpace = archivedPanes.value.filter((pane) => pane.spaceId === activeId);
 
   function toggleTheme() {
     const newTheme = isDark ? 'light' : 'dark';
@@ -47,12 +48,12 @@ export function Sidebar({ onAddAgent, onAddTask, onAddNote }: Props) {
     const wsId = currentWorkspaceId.value;
     if (!wsId) { alert('No workspace loaded'); return; }
     try {
-      const json = await exportWorkspace();
-      const blob = new Blob([json], { type: 'application/json' });
+      const exported = await exportWorkspace();
+      const blob = new Blob([exported.bytes], { type: 'application/x-sqlite3' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `cove-workspace-${Date.now()}.json`;
+      a.download = exported.filename;
       a.click();
       URL.revokeObjectURL(url);
     } catch (err) {
@@ -64,8 +65,7 @@ export function Sidebar({ onAddAgent, onAddTask, onAddNote }: Props) {
     const file = (e.target as HTMLInputElement).files?.[0];
     if (!file) return;
     try {
-      const text = await file.text();
-      await importWorkspace(text);
+      await importWorkspace(file);
     } catch (err) {
       console.error('Import failed:', err);
     }
@@ -124,7 +124,7 @@ export function Sidebar({ onAddAgent, onAddTask, onAddNote }: Props) {
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
             </svg>
           </button>
-          <input type="file" ref={importInputRef} accept=".json" style={{ display: 'none' }} onChange={handleImport} />
+          <input type="file" ref={importInputRef} accept=".db,.sqlite,.cove.db,application/octet-stream" style={{ display: 'none' }} onChange={handleImport} />
         </div>
       </div>
 
@@ -207,7 +207,7 @@ export function Sidebar({ onAddAgent, onAddTask, onAddNote }: Props) {
           {/* Tasks - Tree View */}
           {tasks.value.size > 0 && (
             <SidebarGroup title="Tasks">
-              <TaskTreeView />
+              <TaskListView />
             </SidebarGroup>
           )}
 
@@ -221,9 +221,25 @@ export function Sidebar({ onAddAgent, onAddTask, onAddNote }: Props) {
                     <span class={`sidebar-badge ${p.kind}`}>
                       {p.kind === 'agent' ? (p.agentName ?? 'Agent') : 'Shell'}
                     </span>
-                    <span class="session-id-label">{p.sessionId}</span>
+                    <span class="session-id-label">{p.sessionId ?? p.sessionStatus ?? 'idle'}</span>
+                    {p.needsAttention && <span class="task-link-status">attention</span>}
                   </div>
-                  <button class="sidebar-delete" onClick={(e) => { e.stopPropagation(); deletePane(p.id); }}>x</button>
+                  <button class="sidebar-delete" onClick={(e) => { e.stopPropagation(); void deletePane(p.id); }}>x</button>
+                </div>
+              ))}
+            </SidebarGroup>
+          )}
+
+          {archivedForSpace.length > 0 && (
+            <SidebarGroup title="Archive">
+              {archivedForSpace.map((pane) => (
+                <div key={pane.id} class="sidebar-item session-item" onClick={() => unarchivePane(pane.id)}>
+                  <div class="session-row">
+                    <span class="status-dot-sm" />
+                    <span class={`sidebar-badge ${pane.kind}`}>{pane.kind}</span>
+                    <span class="session-id-label">{pane.taskTitle ?? pane.agentName ?? pane.id}</span>
+                  </div>
+                  <button class="sidebar-delete" onClick={(e) => { e.stopPropagation(); unarchivePane(pane.id); }}>restore</button>
                 </div>
               ))}
             </SidebarGroup>
@@ -274,86 +290,47 @@ function SidebarGroup({ title, children }: { title: string; children: any }) {
   );
 }
 
-// Task Tree View Component
-function TaskTreeView() {
-  const rootTasks = activeSpaceRootTasks.value;
+function TaskListView() {
+  const taskList = [...activeSpaceTasks.value].sort((a, b) => {
+    const priorityOrder = { high: 0, medium: 1, low: 2 };
+    const priorityDiff = priorityOrder[a.priority] - priorityOrder[b.priority];
+    if (priorityDiff !== 0) return priorityDiff;
+    return b.createdAt - a.createdAt;
+  });
+  const paneByTaskId = new Map(
+    panes.value
+      .filter((pane) => pane.kind === 'task')
+      .map((pane) => [pane.id, pane] as const),
+  );
 
-  if (rootTasks.length === 0) {
+  if (taskList.length === 0) {
     return <div class="sidebar-empty">No tasks yet</div>;
   }
 
   return (
     <div class="task-tree">
-      {rootTasks.map(task => (
-        <TaskTreeNode key={task.id} task={task} depth={0} />
-      ))}
-    </div>
-  );
-}
+      {taskList.map((task) => {
+        const pane = paneByTaskId.get(task.id);
+        const handleOpen = () => {
+          if (pane) focusPane(pane.id);
+        };
+        const handleDelete = (e: MouseEvent) => {
+          e.stopPropagation();
+          if (pane) void deletePane(pane.id);
+        };
 
-interface TaskTreeNodeProps {
-  task: TaskEntity;
-  depth: number;
-}
-
-function TaskTreeNode({ task, depth }: TaskTreeNodeProps) {
-  const [expanded, setExpanded] = useState(true);
-  const subtasks = getSubtasks(task.id);
-  const hasChildren = subtasks.length > 0;
-  const pane = panes.value.find(p => p.id === task.id);
-
-  const handleClick = () => {
-    if (pane) focusPane(pane.id);
-  };
-
-  const handleToggle = (e: MouseEvent) => {
-    e.stopPropagation();
-    setExpanded(!expanded);
-  };
-
-  return (
-    <div class="task-tree-node">
-      <div
-        class="task-tree-item"
-        style={{ paddingLeft: `${depth * 16 + 8}px` }}
-        onClick={handleClick}
-      >
-        {hasChildren ? (
-          <button class="task-tree-toggle" onClick={handleToggle}>
-            <svg
-              width="10"
-              height="10"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              style={{ transform: expanded ? 'rotate(90deg)' : 'rotate(0deg)' }}
-            >
-              <polyline points="9 18 15 12 9 6" />
-            </svg>
-          </button>
-        ) : (
-          <span class="task-tree-spacer" />
-        )}
-        <span class="status-dot-sm" data-status={task.status} />
-        <span class="task-tree-title">{task.title || 'Untitled'}</span>
-        {hasChildren && (
-          <span class="task-tree-count">{subtasks.length}</span>
-        )}
-        <button
-          class="sidebar-delete"
-          onClick={(e) => { e.stopPropagation(); if (pane) deletePane(pane.id); }}
-        >
-          x
-        </button>
-      </div>
-      {hasChildren && expanded && (
-        <div class="task-tree-children">
-          {subtasks.map(child => (
-            <TaskTreeNode key={child.id} task={child} depth={depth + 1} />
-          ))}
-        </div>
-      )}
+        return (
+          <div key={task.id} class="task-tree-item" onClick={handleOpen}>
+            <span class="status-dot-sm" data-status={task.status} />
+            <span class="task-tree-title">{task.title || 'Untitled'}</span>
+            {pane ? (
+              <button class="sidebar-delete" onClick={handleDelete}>
+                x
+              </button>
+            ) : null}
+          </div>
+        );
+      })}
     </div>
   );
 }

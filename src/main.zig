@@ -11,8 +11,7 @@ pub fn main() !void {
     const allocator = gpa_state.allocator();
 
     // Open database
-    var db = try db_mod.Db.open(allocator);
-    defer db.close();
+    const db = try db_mod.Db.open(allocator);
 
     // Resolve frontend dist directory
     const static_root = resolveFrontendDir(allocator) catch |err| {

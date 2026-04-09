@@ -11,6 +11,8 @@ import {
   currentWorkspaceId,
   exportWorkspace,
   importWorkspace,
+  layoutMode,
+  setLayoutMode,
 } from '../store';
 
 interface Props {
@@ -22,6 +24,7 @@ export function SettingsDialog({ onClose }: Props) {
   const [concurrency, setConcurrency] = useState(settings.concurrency);
   const [autoDispatch, setAutoDispatch] = useState(settings.autoDispatch);
   const [defaultAgentId, setDefaultAgentId] = useState(settings.defaultAgentId);
+  const [selectedLayoutMode, setSelectedLayoutMode] = useState(layoutMode.value);
   const [importError, setImportError] = useState<string | null>(null);
   const [showAddAgent, setShowAddAgent] = useState(false);
   const [newAgentName, setNewAgentName] = useState('');
@@ -60,6 +63,8 @@ export function SettingsDialog({ onClose }: Props) {
       await resizeAgentPool(concurrency);
     }
 
+    setLayoutMode(selectedLayoutMode);
+
     onClose();
   };
 
@@ -67,12 +72,12 @@ export function SettingsDialog({ onClose }: Props) {
     const wsId = currentWorkspaceId.value;
     if (!wsId) { alert('No workspace loaded'); return; }
     try {
-      const json = await exportWorkspace();
-      const blob = new Blob([json], { type: 'application/json' });
+      const exported = await exportWorkspace();
+      const blob = new Blob([exported.bytes], { type: 'application/x-sqlite3' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `nexus-workspace-${new Date().toISOString().slice(0, 10)}.json`;
+      a.download = exported.filename;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -93,8 +98,7 @@ export function SettingsDialog({ onClose }: Props) {
     if (!file) return;
 
     try {
-      const text = await file.text();
-      await importWorkspace(text);
+      await importWorkspace(file);
       setImportError(null);
       onClose();
     } catch (err) {
@@ -146,6 +150,18 @@ export function SettingsDialog({ onClose }: Props) {
               {allAgents.value.map(a => (
                 <option key={a.id} value={a.id}>{a.name}</option>
               ))}
+            </select>
+          </label>
+
+          <label class="settings-row">
+            <span class="settings-label">Layout</span>
+            <select
+              class="settings-select"
+              value={selectedLayoutMode}
+              onChange={(e) => setSelectedLayoutMode((e.target as HTMLSelectElement).value as 'horizontal' | 'vertical')}
+            >
+              <option value="horizontal">Horizontal</option>
+              <option value="vertical">Vertical</option>
             </select>
           </label>
         </div>
@@ -282,7 +298,7 @@ export function SettingsDialog({ onClose }: Props) {
             <input
               ref={fileInputRef}
               type="file"
-              accept=".json"
+              accept=".db,.sqlite,.cove.db,application/octet-stream"
               style={{ display: 'none' }}
               onChange={handleFileSelect}
             />

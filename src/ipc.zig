@@ -38,6 +38,7 @@ pub const Server = struct {
 
     pub fn deinit(self: *Server) void {
         self.sessions.deinit();
+        self.db.close();
 
         self.clients_mutex.lock();
         self.clients.deinit(self.allocator);
@@ -203,11 +204,11 @@ pub const Server = struct {
         if (std.mem.eql(u8, method, "pty.spawn")) {
             self.rpcPtySpawn(params, id, client);
         } else if (std.mem.eql(u8, method, "pty.write")) {
-            self.rpcPtyWrite(params);
+            self.rpcPtyWrite(params, id, client);
         } else if (std.mem.eql(u8, method, "pty.resize")) {
-            self.rpcPtyResize(params);
+            self.rpcPtyResize(params, id, client);
         } else if (std.mem.eql(u8, method, "pty.kill")) {
-            self.rpcPtyKill(params);
+            self.rpcPtyKill(params, id, client);
         }
         // Workspace methods
         else if (std.mem.eql(u8, method, "workspace.list")) {
@@ -254,6 +255,8 @@ pub const Server = struct {
             self.rpcTaskAssign(params, id, client);
         } else if (std.mem.eql(u8, method, "task.unassign")) {
             self.rpcTaskUnassign(params, id, client);
+        } else if (std.mem.eql(u8, method, "task.resetDispatch")) {
+            self.rpcTaskResetDispatch(params, id, client);
         }
         // Agent methods
         else if (std.mem.eql(u8, method, "agent.create")) {
@@ -282,6 +285,10 @@ pub const Server = struct {
             self.rpcWorkspaceExport(params, id, client);
         } else if (std.mem.eql(u8, method, "workspace.import")) {
             self.rpcWorkspaceImport(params, id, client);
+        } else if (std.mem.eql(u8, method, "workspace.exportDb")) {
+            self.rpcWorkspaceExportDb(id, client);
+        } else if (std.mem.eql(u8, method, "workspace.importDb")) {
+            self.rpcWorkspaceImportDb(params, id, client);
         }
         // AI helper
         else if (std.mem.eql(u8, method, "ai.summarize")) {
@@ -333,26 +340,29 @@ pub const Server = struct {
         sendResult(client, id, resp);
     }
 
-    fn rpcPtyWrite(self: *Server, params: std.json.ObjectMap) void {
+    fn rpcPtyWrite(self: *Server, params: std.json.ObjectMap, id: ?std.json.Value, client: *Client) void {
         const session_id = getStr(params, "session_id") orelse return;
         const data = getStr(params, "data") orelse return;
         if (self.sessions.get(session_id)) |s| {
             _ = s.pty_handle.write(data) catch {};
         }
+        if (id != null) sendResult(client, id, "true");
     }
 
-    fn rpcPtyResize(self: *Server, params: std.json.ObjectMap) void {
+    fn rpcPtyResize(self: *Server, params: std.json.ObjectMap, id: ?std.json.Value, client: *Client) void {
         const session_id = getStr(params, "session_id") orelse return;
         const cols: u16 = @intCast((params.get("cols") orelse return).integer);
         const rows: u16 = @intCast((params.get("rows") orelse return).integer);
         if (self.sessions.get(session_id)) |s| {
             s.pty_handle.resize(cols, rows) catch {};
         }
+        if (id != null) sendResult(client, id, "true");
     }
 
-    fn rpcPtyKill(self: *Server, params: std.json.ObjectMap) void {
+    fn rpcPtyKill(self: *Server, params: std.json.ObjectMap, id: ?std.json.Value, client: *Client) void {
         const session_id = getStr(params, "session_id") orelse return;
         self.sessions.kill(session_id);
+        if (id != null) sendResult(client, id, "true");
     }
 
     // -- Workspace RPC --
@@ -503,9 +513,13 @@ pub const Server = struct {
         const space_id = getStr(params, "space_id") orelse return;
         const kind = getStr(params, "kind") orelse "terminal";
         const title = getStr(params, "title") orelse "";
+        const provided_id = getStr(params, "id");
 
-        const nid = std.fmt.allocPrint(self.allocator, "n-{d}", .{std.time.timestamp()}) catch return;
-        defer self.allocator.free(nid);
+        const nid = provided_id orelse blk: {
+            const generated = std.fmt.allocPrint(self.allocator, "n-{d}", .{std.time.timestamp()}) catch return;
+            break :blk generated;
+        };
+        defer if (provided_id == null) self.allocator.free(nid);
 
         self.db.createNode(nid, space_id, kind, title) catch |err| {
             sendError(client, id, -32000, @errorName(err));
@@ -765,6 +779,20 @@ pub const Server = struct {
         sendResult(client, id, "true");
     }
 
+    fn rpcTaskResetDispatch(self: *Server, params: std.json.ObjectMap, id: ?std.json.Value, client: *Client) void {
+        const task_id = getStr(params, "id") orelse {
+            sendError(client, id, -32602, "Missing id");
+            return;
+        };
+        const requeue = if (params.get("requeue")) |value| value == .bool and value.bool else true;
+
+        self.db.resetTaskDispatch(task_id, requeue) catch |err| {
+            sendError(client, id, -32000, @errorName(err));
+            return;
+        };
+        sendResult(client, id, "true");
+    }
+
     // -- Agent RPC handlers --
 
     fn rpcAgentCreate(self: *Server, params: std.json.ObjectMap, id: ?std.json.Value, client: *Client) void {
@@ -774,13 +802,14 @@ pub const Server = struct {
         };
         const provider_id = getStr(params, "provider_id") orelse "claude";
         const provider_name = getStr(params, "provider_name") orelse "Claude Code";
+        const provided_id = getStr(params, "id");
         const slot_id = getStr(params, "slot_id");
 
-        const agent_id = slot_id orelse blk: {
+        const agent_id = provided_id orelse slot_id orelse blk: {
             const generated = std.fmt.allocPrint(self.allocator, "agent-{d}", .{std.time.timestamp()}) catch return;
             break :blk generated;
         };
-        defer if (slot_id == null) self.allocator.free(agent_id);
+        defer if (provided_id == null and slot_id == null) self.allocator.free(agent_id);
 
         self.db.createAgent(agent_id, space_id, provider_id, provider_name) catch |err| {
             sendError(client, id, -32000, @errorName(err));
@@ -803,6 +832,8 @@ pub const Server = struct {
             getStr(params, "status"),
             getStr(params, "session_id"),
             getStr(params, "prompt"),
+            if (params.get("clear_session_id")) |value| value == .bool and value.bool else false,
+            if (params.get("clear_assignment")) |value| value == .bool and value.bool else false,
         ) catch |err| {
             sendError(client, id, -32000, @errorName(err));
             return;
@@ -1215,6 +1246,104 @@ pub const Server = struct {
         }
 
         sendResult(client, id, "{\"success\":true}");
+    }
+
+    fn stopLiveSessions(self: *Server) void {
+        var it = self.sessions.iterator();
+        while (it.next()) |entry| {
+            if (entry.value_ptr.status == .running) {
+                entry.value_ptr.pty_handle.kill();
+                entry.value_ptr.status = .exited;
+            }
+        }
+    }
+
+    fn switchWorkspaceDb(self: *Server, db_path: []const u8) !void {
+        self.stopLiveSessions();
+
+        var next_db = try db_mod.Db.openAtPath(self.allocator, db_path);
+        errdefer next_db.close();
+
+        self.db.close();
+        self.db = next_db;
+        try db_mod.saveConfiguredDbPath(self.allocator, db_path);
+    }
+
+    fn rpcWorkspaceExportDb(self: *Server, id: ?std.json.Value, client: *Client) void {
+        const file = std.fs.openFileAbsolute(self.db.path, .{}) catch |err| {
+            sendError(client, id, -32000, @errorName(err));
+            return;
+        };
+        defer file.close();
+
+        const bytes = file.readToEndAlloc(self.allocator, 32 * 1024 * 1024) catch |err| {
+            sendError(client, id, -32000, @errorName(err));
+            return;
+        };
+        defer self.allocator.free(bytes);
+
+        const encoded_len = std.base64.standard.Encoder.calcSize(bytes.len);
+        const encoded = self.allocator.alloc(u8, encoded_len) catch {
+            sendError(client, id, -32000, "OutOfMemory");
+            return;
+        };
+        defer self.allocator.free(encoded);
+        _ = std.base64.standard.Encoder.encode(encoded, bytes);
+
+        const filename = std.fs.path.basename(self.db.path);
+        var buf: std.ArrayList(u8) = .empty;
+        defer buf.deinit(self.allocator);
+        std.fmt.format(buf.writer(self.allocator), "{{\"filename\":\"{s}\",\"data\":\"{s}\"}}", .{ filename, encoded }) catch {
+            sendError(client, id, -32000, "ResponseTooLarge");
+            return;
+        };
+        sendResult(client, id, buf.items);
+    }
+
+    fn rpcWorkspaceImportDb(self: *Server, params: std.json.ObjectMap, id: ?std.json.Value, client: *Client) void {
+        const encoded = getStr(params, "data") orelse {
+            sendError(client, id, -32602, "Missing data");
+            return;
+        };
+        const filename = getStr(params, "filename") orelse "workspace";
+
+        const decoded_len = std.base64.standard.Decoder.calcSizeForSlice(encoded) catch {
+            sendError(client, id, -32000, "InvalidBase64");
+            return;
+        };
+        const decoded = self.allocator.alloc(u8, decoded_len) catch {
+            sendError(client, id, -32000, "OutOfMemory");
+            return;
+        };
+        defer self.allocator.free(decoded);
+
+        std.base64.standard.Decoder.decode(decoded, encoded) catch {
+            sendError(client, id, -32000, "InvalidBase64");
+            return;
+        };
+
+        const target_path = db_mod.createManagedWorkspaceDbPath(self.allocator, filename) catch |err| {
+            sendError(client, id, -32000, @errorName(err));
+            return;
+        };
+        defer self.allocator.free(target_path);
+
+        var out = std.fs.createFileAbsolute(target_path, .{ .truncate = true }) catch |err| {
+            sendError(client, id, -32000, @errorName(err));
+            return;
+        };
+        defer out.close();
+        out.writeAll(decoded[0..decoded_len]) catch |err| {
+            sendError(client, id, -32000, @errorName(err));
+            return;
+        };
+
+        self.switchWorkspaceDb(target_path) catch |err| {
+            sendError(client, id, -32000, @errorName(err));
+            return;
+        };
+
+        sendResult(client, id, "true");
     }
 
     fn rpcAiSummarize(self: *Server, params: std.json.ObjectMap, id: ?std.json.Value, client: *Client) void {
