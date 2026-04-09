@@ -13,6 +13,10 @@ pub const Db = struct {
         const db_path = try resolveDbPath(allocator);
         defer allocator.free(db_path);
 
+        return openPath(allocator, db_path);
+    }
+
+    fn openPath(allocator: Allocator, db_path: [:0]const u8) !Db {
         var handle: ?*c.sqlite3 = null;
         if (c.sqlite3_open(db_path.ptr, &handle) != c.SQLITE_OK) {
             if (handle) |h| _ = c.sqlite3_close(h);
@@ -857,4 +861,139 @@ fn resolveDbPath(allocator: Allocator) ![:0]u8 {
 
     // Return null-terminated copy
     return try allocator.dupeZ(u8, path);
+}
+
+fn uniqueTestDbPath(allocator: Allocator) ![:0]u8 {
+    return std.fmt.allocPrintZ(
+        allocator,
+        "/tmp/nexus-db-test-{d}.sqlite",
+        .{std.time.nanoTimestamp()},
+    );
+}
+
+fn freeWorkspaceRows(allocator: Allocator, rows: []WorkspaceRow) void {
+    for (rows) |row| {
+        allocator.free(row.id);
+        allocator.free(row.name);
+        allocator.free(row.path);
+        if (row.active_space_id) |value| allocator.free(value);
+    }
+    allocator.free(rows);
+}
+
+fn freeSpaceRows(allocator: Allocator, rows: []SpaceRow) void {
+    for (rows) |row| {
+        allocator.free(row.id);
+        allocator.free(row.workspace_id);
+        allocator.free(row.name);
+        allocator.free(row.directory_path);
+        if (row.label_color) |value| allocator.free(value);
+    }
+    allocator.free(rows);
+}
+
+fn freeTaskRows(allocator: Allocator, rows: []TaskRow) void {
+    for (rows) |row| {
+        allocator.free(row.id);
+        allocator.free(row.space_id);
+        if (row.parent_task_id) |value| allocator.free(value);
+        allocator.free(row.title);
+        allocator.free(row.description);
+        allocator.free(row.status);
+        allocator.free(row.priority);
+        allocator.free(row.queue_status);
+        if (row.assigned_agent_id) |value| allocator.free(value);
+        if (row.node_id) |value| allocator.free(value);
+    }
+    allocator.free(rows);
+}
+
+fn freeAgentRows(allocator: Allocator, rows: []AgentRow) void {
+    for (rows) |row| {
+        allocator.free(row.id);
+        allocator.free(row.space_id);
+        allocator.free(row.provider_id);
+        allocator.free(row.provider_name);
+        allocator.free(row.status);
+        if (row.session_id) |value| allocator.free(value);
+        if (row.assigned_task_id) |value| allocator.free(value);
+        if (row.prompt) |value| allocator.free(value);
+        if (row.node_id) |value| allocator.free(value);
+    }
+    allocator.free(rows);
+}
+
+test "Db persists workspaces, spaces, and scheduler settings across reopen" {
+    const allocator = std.testing.allocator;
+    const db_path = try uniqueTestDbPath(allocator);
+    defer allocator.free(db_path);
+    defer std.fs.cwd().deleteFile(std.mem.sliceTo(db_path, 0)) catch {};
+
+    {
+        var db = try Db.openPath(allocator, db_path);
+        defer db.close();
+
+        try db.createWorkspace("ws-1", "Workspace", "/repo");
+        try db.createSpace("space-1", "ws-1", "Default", "/repo");
+        try db.setSchedulerSettings("ws-1", 3, true, "claude");
+    }
+
+    {
+        var reopened = try Db.openPath(allocator, db_path);
+        defer reopened.close();
+
+        const workspaces = try reopened.listWorkspaces(allocator);
+        defer freeWorkspaceRows(allocator, workspaces);
+        try std.testing.expectEqual(@as(usize, 1), workspaces.len);
+        try std.testing.expectEqualStrings("ws-1", workspaces[0].id);
+        try std.testing.expectEqualStrings("/repo", workspaces[0].path);
+
+        const spaces = try reopened.listSpaces(allocator, "ws-1");
+        defer freeSpaceRows(allocator, spaces);
+        try std.testing.expectEqual(@as(usize, 1), spaces.len);
+        try std.testing.expectEqualStrings("space-1", spaces[0].id);
+        try std.testing.expectEqualStrings("Default", spaces[0].name);
+
+        const settings = (try reopened.getSchedulerSettings(allocator, "ws-1")).?;
+        defer {
+            allocator.free(settings.workspace_id);
+            allocator.free(settings.default_agent_id);
+        }
+        try std.testing.expectEqual(@as(i32, 3), settings.concurrency);
+        try std.testing.expect(settings.auto_dispatch);
+        try std.testing.expectEqualStrings("claude", settings.default_agent_id);
+    }
+}
+
+test "Db persists task queue assignment and agent linkage" {
+    const allocator = std.testing.allocator;
+    const db_path = try uniqueTestDbPath(allocator);
+    defer allocator.free(db_path);
+    defer std.fs.cwd().deleteFile(std.mem.sliceTo(db_path, 0)) catch {};
+
+    var db = try Db.openPath(allocator, db_path);
+    defer db.close();
+
+    try db.createWorkspace("ws-1", "Workspace", "/repo");
+    try db.createSpace("space-1", "ws-1", "Default", "/repo");
+    try db.createTask("task-1", "space-1", "Test persistence", "Verify dispatch", "high", null);
+    try db.createAgent("slot-1", "space-1", "claude", "Claude Code");
+    try db.enqueueTask("task-1");
+    try db.assignTaskToAgent("task-1", "slot-1");
+
+    const tasks_list = try db.listTasks(allocator, "space-1", null);
+    defer freeTaskRows(allocator, tasks_list);
+    try std.testing.expectEqual(@as(usize, 1), tasks_list.len);
+    try std.testing.expectEqualStrings("dispatched", tasks_list[0].queue_status);
+    try std.testing.expectEqualStrings("doing", tasks_list[0].status);
+    try std.testing.expect(tasks_list[0].queued_at != null);
+    try std.testing.expect(tasks_list[0].dispatched_at != null);
+    try std.testing.expectEqualStrings("slot-1", tasks_list[0].assigned_agent_id.?);
+
+    const agents_list = try db.listAgents(allocator, "space-1", null);
+    defer freeAgentRows(allocator, agents_list);
+    try std.testing.expectEqual(@as(usize, 1), agents_list.len);
+    try std.testing.expectEqualStrings("running", agents_list[0].status);
+    try std.testing.expectEqualStrings("task-1", agents_list[0].assigned_task_id.?);
+    try std.testing.expect(agents_list[0].started_at != null);
 }

@@ -41,11 +41,12 @@ pub fn build(b: *std.Build) void {
     // Tests
     const unit_tests = b.addTest(.{
         .root_module = b.createModule(.{
-            .root_source_file = b.path("src/main.zig"),
+            .root_source_file = b.path("src/test_main.zig"),
             .target = target,
             .optimize = optimize,
         }),
     });
+    unit_tests.linkSystemLibrary("util");
     unit_tests.linkSystemLibrary("sqlite3");
     unit_tests.linkLibC();
 
