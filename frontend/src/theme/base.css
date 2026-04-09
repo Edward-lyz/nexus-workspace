@@ -3203,13 +3203,13 @@ html, body {
    LIQUID GLASS — Enhanced glassmorphism effects
    ═══════════════════════════════════════════════════════════════════════════ */
 
-/* Iridescent border for focused panes */
+/* Iridescent border for focused panes - cycles hue in border-color */
 @keyframes iridescent-border {
-  0%   { --glass-border-hue: 185deg; }
-  25%  { --glass-border-hue: 200deg; }
-  50%  { --glass-border-hue: 220deg; }
-  75%  { --glass-border-hue: 200deg; }
-  100% { --glass-border-hue: 185deg; }
+  0%   { border-color: hsl(185deg, 80%, 55%); }
+  25%  { border-color: hsl(200deg, 80%, 60%); }
+  50%  { border-color: hsl(220deg, 80%, 65%); }
+  75%  { border-color: hsl(200deg, 80%, 60%); }
+  100% { border-color: hsl(185deg, 80%, 55%); }
 }
 
 /* Liquid glass pulse on plan mode */

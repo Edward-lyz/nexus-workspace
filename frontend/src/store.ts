@@ -742,6 +742,8 @@ export async function spawnAgentForTask(taskPaneId: string, agentId: string, pro
   }
 }
 
+const BEST_OF_N_TITLE_MAX_LENGTH = 40;
+
 // Best of N: run a task N times with different or same agents
 export async function spawnBestOfN(taskPaneId: string, agentIds: string[], prompt: string): Promise<void> {
   const space = activeSpace.value;
@@ -751,7 +753,7 @@ export async function spawnBestOfN(taskPaneId: string, agentIds: string[], promp
     const agentId = agentIds[i];
     // Create a sub-task for each run
     const subTask = await createTask(
-      `Run ${i + 1}: ${prompt.slice(0, 40)}`,
+      `Run ${i + 1}: ${prompt.slice(0, BEST_OF_N_TITLE_MAX_LENGTH)}`,
       prompt,
       'medium',
       taskPaneId

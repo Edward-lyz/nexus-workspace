@@ -48,8 +48,9 @@ export function ExpandedPane() {
           <button
             class="expanded-popout"
             onClick={() => {
-              if (isPopped) closePopout(pane.id);
-              else popoutPane(pane.id);
+              if (!paneId) return;
+              if (isPopped) closePopout(paneId);
+              else popoutPane(paneId);
               expandPane(null);
             }}
             title={isPopped ? 'Restore from floating' : 'Pop out to floating window'}
