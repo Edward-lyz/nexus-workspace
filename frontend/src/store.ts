@@ -1431,9 +1431,13 @@ export async function spawnAgent(agentId: string, prompt: string, persistAgentEn
   // If prompt provided, wait for TUI to fully start then send it with newline to auto-execute
   if (pane?.sessionId && prompt) {
     // Wait 2.5s for Claude TUI to be fully ready
-    setTimeout(() => {
-      // Send prompt followed by Enter key
-      ipc.call('pty.write', { session_id: pane.sessionId, data: prompt + '\r' }).catch(() => {});
+    setTimeout(async () => {
+      // Send prompt content first
+      await ipc.call('pty.write', { session_id: pane.sessionId, data: prompt }).catch(() => {});
+      // Wait a bit for terminal to process the content, then send Enter
+      setTimeout(() => {
+        ipc.call('pty.write', { session_id: pane.sessionId, data: '\r' }).catch(() => {});
+      }, 100);
     }, 2500);
   }
   return pane;
@@ -1870,10 +1874,21 @@ export async function cloneAgentToAgent(
   if (sourcePane.sessionId && sourcePane.sessionStatus === 'running') {
     requestSessionKill(sourcePane.sessionId);
   }
-  updatePane(sourcePaneId, { sessionStatus: 'exited' });
 
   // Spawn new agent with context
   const newPane = await spawnAgent(targetAgentId, context);
+
+  // Delete the original pane after new agent is spawned
+  panes.value = panes.value.filter(p => p.id !== sourcePaneId);
+  if (!isSlotAgentId(sourcePaneId) && agents.value.has(sourcePaneId)) {
+    const newAgents = new Map(agents.value);
+    newAgents.delete(sourcePaneId);
+    agents.value = newAgents;
+    void ipc.call('agent.delete', { id: sourcePaneId }).catch((err) => {
+      console.error('agent.delete failed:', err);
+    });
+  }
+
   return newPane;
 }
 
