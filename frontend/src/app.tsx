@@ -187,7 +187,7 @@ export function App() {
         />
         <TilingGrid />
       </div>
-      <StatusBar />
+      <StatusBar onOpenSettings={() => setDialog('settings')} onOpenHistory={() => setDialog('history')} />
       <PopoutContainer />
       <ExpandedPane />
       {dialog === 'agent' && dialogSpace && <AgentDialog space={dialogSpace} onClose={closeDialog} />}
