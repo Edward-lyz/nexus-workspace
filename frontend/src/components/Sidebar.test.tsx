@@ -39,7 +39,7 @@ describe('Sidebar', () => {
     const revokeObjectURL = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
     const anchorClick = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
     const exportWorkspace = vi.spyOn(store, 'exportWorkspace').mockResolvedValue({
-      filename: 'workspace.cove.db',
+      filename: 'workspace.nexus.db',
       bytes: new Uint8Array([1, 2, 3]),
     });
     const ipcCall = vi.spyOn(store.ipc, 'call').mockImplementation(async (method: string) => {
@@ -79,7 +79,7 @@ describe('Sidebar', () => {
     const { container } = render(<Sidebar onAddTask={vi.fn()} onAddAgent={vi.fn()} onAddNote={vi.fn()} />);
 
     const input = container.querySelector('input[type="file"]') as HTMLInputElement;
-    const file = new File(['sqlite'], 'workspace.cove.db', { type: 'application/x-sqlite3' });
+    const file = new File(['sqlite'], 'workspace.nexus.db', { type: 'application/x-sqlite3' });
     await fireEvent.change(input, { target: { files: [file] } });
 
     await waitFor(() => {

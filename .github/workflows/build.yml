@@ -54,7 +54,7 @@ jobs:
       - name: Create App Bundle
         run: |
           mkdir -p Nexus.app/Contents/{MacOS,Resources/static}
-          cp zig-out/bin/cove Nexus.app/Contents/MacOS/nexus
+          cp zig-out/bin/nexus Nexus.app/Contents/MacOS/nexus
           cp -r frontend/dist/* Nexus.app/Contents/Resources/static/
 
           cat > Nexus.app/Contents/Info.plist << 'EOF'

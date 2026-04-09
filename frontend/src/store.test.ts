@@ -138,11 +138,19 @@ describe('store startup and dispatch flows', () => {
     ]);
 
     const ipcCall = vi.spyOn(store.ipc, 'call').mockImplementation(async (method: string, params?: Record<string, unknown>) => {
-      if (method === 'task.assign') return null;
+      if (method === 'task.enqueue') return null;
+      if (method === 'scheduler.dispatch') return [{ task_id: 'task-1', agent_id: 'slot-1' }];
       if (method === 'node.create') return { id: params?.id ?? 'pane-1' };
       if (method === 'pty.spawn') return { session_id: 'session-42' };
-      if (method === 'agent.create') return { id: params?.id ?? 'pane-1' };
-      if (method === 'agent.update') return null;
+      if (method === 'scheduler.attachTaskSession') {
+        return {
+          space_id: 'space-1',
+          task_id: 'task-1',
+          agent_id: 'slot-1',
+          session_id: 'session-42',
+          agent_status: 'running',
+        };
+      }
       if (method === 'pty.write') return null;
       throw new Error(`Unexpected method: ${method} ${JSON.stringify(params)}`);
     });
@@ -155,20 +163,17 @@ describe('store startup and dispatch flows', () => {
         description: 'Dispatch me',
         status: 'todo',
         priority: 'high',
-        queueStatus: 'queued',
-        queuedAt: 10,
+        queueStatus: 'none',
         sortOrder: 0,
         createdAt: 1,
       }],
     ]);
 
-    await Promise.resolve();
-    await Promise.resolve();
-    await Promise.resolve();
+    await store.enqueueTask('task-1');
 
     await vi.advanceTimersByTimeAsync(2500);
 
-    expect(ipcCall).toHaveBeenCalledWith('task.assign', { task_id: 'task-1', agent_id: 'slot-1' });
+    expect(ipcCall).toHaveBeenCalledWith('scheduler.dispatch', { space_id: 'space-1' });
     expect(ipcCall).toHaveBeenCalledWith('node.create', expect.objectContaining({
       id: expect.any(String),
       kind: 'agent',
@@ -181,8 +186,9 @@ describe('store startup and dispatch flows', () => {
       command: 'claude',
       node_id: expect.any(String),
     });
-    expect(ipcCall).toHaveBeenCalledWith('agent.update', { id: 'slot-1', session_id: 'session-42' });
+    expect(ipcCall).toHaveBeenCalledWith('scheduler.attachTaskSession', { task_id: 'task-1', session_id: 'session-42' });
     expect(ipcCall).toHaveBeenCalledWith('pty.write', { session_id: 'session-42', data: 'Dispatch me\r' });
+    expect(ipcCall).not.toHaveBeenCalledWith('agent.create', expect.anything());
     expect(store.tasks.value.get('task-1')).toMatchObject({
       assignedAgentId: 'slot-1',
       queueStatus: 'dispatched',
@@ -243,21 +249,36 @@ describe('store startup and dispatch flows', () => {
             space_id: 'space-1',
             provider_id: 'claude',
             provider_name: 'Claude Code',
-            status: 'running',
-            session_id: 'session-stale',
-            assigned_task_id: 'task-1',
+            status: 'idle',
             sort_order: 0,
             created_at: 1,
           },
         ];
       }
-      if (method === 'task.resetDispatch') return null;
+      if (method === 'scheduler.reconcileSpace') return null;
+      if (method === 'task.list') {
+        return [
+          {
+            id: 'task-1',
+            space_id: 'space-1',
+            title: 'Queued task',
+            description: 'Dispatch me',
+            status: 'todo',
+            priority: 'high',
+            queue_status: 'queued',
+            queued_at: 20,
+            sort_order: 0,
+            created_at: 1,
+          },
+        ];
+      }
+      if (method === 'scheduler.dispatch') return [];
       throw new Error(`Unexpected method: ${method}`);
     });
 
     await store.initializeAgentPool(1);
 
-    expect(ipcCall).toHaveBeenCalledWith('task.resetDispatch', { id: 'task-1', requeue: true });
+    expect(ipcCall).toHaveBeenCalledWith('scheduler.reconcileSpace', { space_id: 'space-1', requeue: true });
     expect(store.tasks.value.get('task-1')).toMatchObject({
       status: 'todo',
       queueStatus: 'queued',
@@ -321,13 +342,24 @@ describe('store startup and dispatch flows', () => {
     ]);
 
     const ipcCall = vi.spyOn(store.ipc, 'call').mockImplementation(async (method: string) => {
-      if (method === 'task.unassign') return null;
+      if (method === 'scheduler.handleSessionExit') {
+        return {
+          kind: 'slot',
+          space_id: 'space-1',
+          task_id: 'task-1',
+          agent_id: 'slot-1',
+          task_status: 'done',
+          queue_status: 'completed',
+          agent_status: 'idle',
+        };
+      }
+      if (method === 'scheduler.dispatch') return [];
       throw new Error(`Unexpected method: ${method}`);
     });
 
     await store.markSessionExited('session-42');
 
-    expect(ipcCall).toHaveBeenCalledWith('task.unassign', { id: 'task-1' });
+    expect(ipcCall).toHaveBeenCalledWith('scheduler.handleSessionExit', { session_id: 'session-42' });
     expect(store.tasks.value.get('task-1')).toMatchObject({
       status: 'done',
       queueStatus: 'completed',
@@ -407,6 +439,7 @@ describe('store startup and dispatch flows', () => {
     const ipcCall = vi.spyOn(store.ipc, 'call').mockImplementation(async (method: string, params?: Record<string, unknown>) => {
       if (method === 'pty.kill') return null;
       if (method === 'agent.delete') return null;
+      if (method === 'node.delete') return null;
       if (method === 'task.delete') return null;
       throw new Error(`Unexpected method: ${method} ${JSON.stringify(params)}`);
     });
@@ -426,6 +459,100 @@ describe('store startup and dispatch flows', () => {
     expect(store.agents.value.has('pane-2')).toBe(false);
   });
 
+  it('deletes a task-linked agent pane without immediately recreating it', async () => {
+    store.schedulerSettings.value = {
+      concurrency: 1,
+      autoDispatch: true,
+      defaultAgentId: 'claude',
+    };
+    store.panes.value = [
+      {
+        id: 'task-1',
+        kind: 'task',
+        spaceId: 'space-1',
+        linkedPaneId: 'pane-2',
+        taskTitle: 'Queued task',
+        taskDescription: 'Dispatch me',
+        taskStatus: 'doing',
+        taskPriority: 'high',
+      },
+      {
+        id: 'pane-2',
+        kind: 'agent',
+        spaceId: 'space-1',
+        sessionId: 'session-42',
+        sessionStatus: 'running',
+        embedded: true,
+      },
+    ];
+    store.tasks.value = new Map([
+      ['task-1', {
+        id: 'task-1',
+        spaceId: 'space-1',
+        title: 'Queued task',
+        description: 'Dispatch me',
+        status: 'doing',
+        priority: 'high',
+        queueStatus: 'dispatched',
+        assignedAgentId: 'slot-1',
+        dispatchedAt: 10,
+        sortOrder: 0,
+        createdAt: 1,
+      }],
+    ]);
+    store.agents.value = new Map([
+      ['slot-1', {
+        id: 'slot-1',
+        spaceId: 'space-1',
+        providerId: 'claude',
+        providerName: 'Claude Code',
+        status: 'running',
+        sessionId: 'session-42',
+        assignedTaskId: 'task-1',
+        startedAt: 10,
+        sortOrder: 0,
+        createdAt: 1,
+      }],
+    ]);
+
+    const ipcCall = vi.spyOn(store.ipc, 'call').mockImplementation(async (method: string, params?: Record<string, unknown>) => {
+      if (method === 'node.delete') return null;
+      if (method === 'scheduler.stopTask') {
+        return {
+          space_id: 'space-1',
+          task_id: 'task-1',
+          task_status: 'todo',
+          queue_status: 'none',
+          agent_id: 'slot-1',
+          session_id: 'session-42',
+          agent_status: 'idle',
+        };
+      }
+      throw new Error(`Unexpected method: ${method} ${JSON.stringify(params)}`);
+    });
+
+    await store.deletePane('pane-2');
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(ipcCall).toHaveBeenCalledWith('scheduler.stopTask', { task_id: 'task-1', requeue: false });
+    expect(store.panes.value.find((pane) => pane.id === 'pane-2')).toBeUndefined();
+    expect(store.panes.value.find((pane) => pane.id === 'task-1')).toMatchObject({
+      linkedPaneId: undefined,
+      taskStatus: 'todo',
+    });
+    expect(store.tasks.value.get('task-1')).toMatchObject({
+      status: 'todo',
+      queueStatus: 'none',
+      assignedAgentId: undefined,
+    });
+    expect(store.agents.value.get('slot-1')).toMatchObject({
+      status: 'idle',
+      assignedTaskId: undefined,
+      sessionId: undefined,
+    });
+  });
+
   it('prunes idle slots beyond the configured concurrency during pool initialization', async () => {
     store.spaces.value = [{ id: 'space-1', name: 'Default' }];
     store.activeSpaceId.value = 'space-1';
@@ -435,8 +562,23 @@ describe('store startup and dispatch flows', () => {
       defaultAgentId: 'claude',
     };
 
+    let agentListCalls = 0;
     const ipcCall = vi.spyOn(store.ipc, 'call').mockImplementation(async (method: string) => {
       if (method === 'agent.list') {
+        agentListCalls += 1;
+        if (agentListCalls >= 3) {
+          return [
+            {
+              id: 'slot-1',
+              space_id: 'space-1',
+              provider_id: 'claude',
+              provider_name: 'Claude Code',
+              status: 'idle',
+              sort_order: 0,
+              created_at: 1,
+            },
+          ];
+        }
         return [
           {
             id: 'slot-1',
@@ -459,6 +601,9 @@ describe('store startup and dispatch flows', () => {
         ];
       }
       if (method === 'agent.delete') return null;
+      if (method === 'scheduler.reconcileSpace') return null;
+      if (method === 'task.list') return [];
+      if (method === 'scheduler.dispatch') return [];
       throw new Error(`Unexpected method: ${method}`);
     });
 
@@ -470,6 +615,11 @@ describe('store startup and dispatch flows', () => {
   });
 
   it('creates pending agent panes for queued work beyond available concurrency', async () => {
+    vi.spyOn(store.ipc, 'call').mockImplementation(async (method: string, params?: Record<string, unknown>) => {
+      if (method === 'node.create') return { id: params?.id ?? 'pane-pending' };
+      throw new Error(`Unexpected method: ${method} ${JSON.stringify(params)}`);
+    });
+
     store.spaces.value = [{ id: 'space-1', name: 'Default' }];
     store.activeSpaceId.value = 'space-1';
     store.schedulerSettings.value = {

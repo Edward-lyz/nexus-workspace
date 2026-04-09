@@ -648,6 +648,79 @@ pub const Db = struct {
         _ = c.sqlite3_exec(self.handle, "COMMIT", null, null, null);
     }
 
+    pub fn dispatchQueuedTasks(self: *Db, allocator: Allocator, space_id: []const u8) ![]DispatchAssignment {
+        const queued_task_ids = try self.listQueuedTaskIdsForDispatch(allocator, space_id);
+        defer freeIdRows(allocator, queued_task_ids);
+
+        const idle_slot_ids = try self.listIdleSlotIdsForDispatch(allocator, space_id);
+        defer freeIdRows(allocator, idle_slot_ids);
+
+        const dispatch_count = @min(queued_task_ids.len, idle_slot_ids.len);
+        if (dispatch_count == 0) return &.{};
+
+        var assignments: std.ArrayList(DispatchAssignment) = .empty;
+        defer assignments.deinit(allocator);
+
+        for (0..dispatch_count) |index| {
+            const task_id = queued_task_ids[index].id;
+            const agent_id = idle_slot_ids[index].id;
+
+            try self.assignTaskToAgent(task_id, agent_id);
+            try assignments.append(allocator, .{
+                .task_id = try allocator.dupe(u8, task_id),
+                .agent_id = try allocator.dupe(u8, agent_id),
+            });
+        }
+
+        return assignments.toOwnedSlice(allocator);
+    }
+
+    const IdRow = struct {
+        id: []const u8,
+    };
+
+    fn listQueuedTaskIdsForDispatch(self: *Db, allocator: Allocator, space_id: []const u8) ![]IdRow {
+        var stmt: ?*c.sqlite3_stmt = null;
+        if (c.sqlite3_prepare_v2(
+            self.handle,
+            "SELECT id FROM tasks WHERE space_id = ?1 AND queue_status = 'queued' AND assigned_agent_id IS NULL ORDER BY CASE priority WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END, COALESCE(queued_at, created_at), sort_order, created_at",
+            -1,
+            &stmt,
+            null,
+        ) != c.SQLITE_OK) return &.{};
+        defer _ = c.sqlite3_finalize(stmt);
+        bindText(stmt.?, 1, space_id);
+
+        var rows: std.ArrayList(IdRow) = .empty;
+        while (c.sqlite3_step(stmt.?) == c.SQLITE_ROW) {
+            rows.append(allocator, .{
+                .id = dupeColumnText(allocator, stmt.?, 0) catch continue,
+            }) catch break;
+        }
+        return rows.toOwnedSlice(allocator) catch &.{};
+    }
+
+    fn listIdleSlotIdsForDispatch(self: *Db, allocator: Allocator, space_id: []const u8) ![]IdRow {
+        var stmt: ?*c.sqlite3_stmt = null;
+        if (c.sqlite3_prepare_v2(
+            self.handle,
+            "SELECT id FROM agents WHERE space_id = ?1 AND id LIKE 'slot-%' AND status = 'idle' AND assigned_task_id IS NULL AND session_id IS NULL ORDER BY sort_order, created_at",
+            -1,
+            &stmt,
+            null,
+        ) != c.SQLITE_OK) return &.{};
+        defer _ = c.sqlite3_finalize(stmt);
+        bindText(stmt.?, 1, space_id);
+
+        var rows: std.ArrayList(IdRow) = .empty;
+        while (c.sqlite3_step(stmt.?) == c.SQLITE_ROW) {
+            rows.append(allocator, .{
+                .id = dupeColumnText(allocator, stmt.?, 0) catch continue,
+            }) catch break;
+        }
+        return rows.toOwnedSlice(allocator) catch &.{};
+    }
+
     // -- Agent CRUD --
 
     pub fn createAgent(
@@ -724,6 +797,99 @@ pub const Db = struct {
             list.append(allocator, row) catch break;
         }
         return list.toOwnedSlice(allocator) catch &.{};
+    }
+
+    pub fn getSessionAgentBinding(self: *Db, allocator: Allocator, session_id: []const u8) !?SessionAgentBinding {
+        var stmt: ?*c.sqlite3_stmt = null;
+        if (c.sqlite3_prepare_v2(self.handle, "SELECT id, space_id, assigned_task_id FROM agents WHERE session_id = ?1 LIMIT 1", -1, &stmt, null) != c.SQLITE_OK) return null;
+        defer _ = c.sqlite3_finalize(stmt);
+        bindText(stmt.?, 1, session_id);
+
+        if (c.sqlite3_step(stmt.?) != c.SQLITE_ROW) return null;
+
+        const agent_id = dupeColumnText(allocator, stmt.?, 0) catch return null;
+        errdefer allocator.free(agent_id);
+        const space_id = dupeColumnText(allocator, stmt.?, 1) catch return null;
+        errdefer allocator.free(space_id);
+
+        return SessionAgentBinding{
+            .agent_id = agent_id,
+            .space_id = space_id,
+            .assigned_task_id = dupeColumnTextOpt(allocator, stmt.?, 2),
+            .is_slot_agent = std.mem.startsWith(u8, agent_id, "slot-"),
+        };
+    }
+
+    pub fn getTaskExecutionBinding(self: *Db, allocator: Allocator, task_id: []const u8) !?TaskExecutionBinding {
+        var stmt: ?*c.sqlite3_stmt = null;
+        if (c.sqlite3_prepare_v2(self.handle, "SELECT t.space_id, t.assigned_agent_id, a.session_id FROM tasks t LEFT JOIN agents a ON t.assigned_agent_id = a.id WHERE t.id = ?1 LIMIT 1", -1, &stmt, null) != c.SQLITE_OK) return null;
+        defer _ = c.sqlite3_finalize(stmt);
+        bindText(stmt.?, 1, task_id);
+
+        if (c.sqlite3_step(stmt.?) != c.SQLITE_ROW) return null;
+
+        const space_id = dupeColumnText(allocator, stmt.?, 0) catch return null;
+        errdefer allocator.free(space_id);
+
+        return TaskExecutionBinding{
+            .space_id = space_id,
+            .assigned_agent_id = dupeColumnTextOpt(allocator, stmt.?, 1),
+            .session_id = dupeColumnTextOpt(allocator, stmt.?, 2),
+        };
+    }
+
+    pub fn reconcileSlotDispatchState(self: *Db, allocator: Allocator, space_id: []const u8, requeue: bool) !void {
+        const tasks_in_space = try self.listTasks(allocator, space_id, null);
+        defer freeTaskRows(allocator, tasks_in_space);
+        const agents_in_space = try self.listAgents(allocator, space_id, null);
+        defer freeAgentRows(allocator, agents_in_space);
+
+        var stale_task_ids = std.StringArrayHashMap(void).init(allocator);
+        defer {
+            var iterator = stale_task_ids.iterator();
+            while (iterator.next()) |entry| {
+                allocator.free(entry.key_ptr.*);
+            }
+            stale_task_ids.deinit();
+        }
+
+        for (tasks_in_space) |task| {
+            if (task.assigned_agent_id) |agent_id| {
+                if (std.mem.startsWith(u8, agent_id, "slot-") and
+                    (std.mem.eql(u8, task.queue_status, "dispatched") or std.mem.eql(u8, task.status, "doing")))
+                {
+                    const task_id = try allocator.dupe(u8, task.id);
+                    if (stale_task_ids.get(task_id) != null) {
+                        allocator.free(task_id);
+                    } else {
+                        try stale_task_ids.put(task_id, {});
+                    }
+                }
+            }
+        }
+
+        for (agents_in_space) |agent| {
+            if (!std.mem.startsWith(u8, agent.id, "slot-")) continue;
+
+            if (std.mem.eql(u8, agent.status, "running") and agent.assigned_task_id != null) {
+                const task_id = try allocator.dupe(u8, agent.assigned_task_id.?);
+                if (stale_task_ids.get(task_id) != null) {
+                    allocator.free(task_id);
+                } else {
+                    try stale_task_ids.put(task_id, {});
+                }
+                continue;
+            }
+
+            if (std.mem.eql(u8, agent.status, "running") or agent.session_id != null or agent.assigned_task_id != null) {
+                try self.updateAgent(agent.id, "idle", null, null, true, true);
+            }
+        }
+
+        var iterator = stale_task_ids.iterator();
+        while (iterator.next()) |entry| {
+            try self.resetTaskDispatch(entry.key_ptr.*, requeue);
+        }
     }
 
     // -- Scheduler Settings --
@@ -896,6 +1062,24 @@ pub const AgentRow = struct {
     created_at: i64,
 };
 
+pub const DispatchAssignment = struct {
+    task_id: []const u8,
+    agent_id: []const u8,
+};
+
+pub const SessionAgentBinding = struct {
+    agent_id: []const u8,
+    space_id: []const u8,
+    assigned_task_id: ?[]const u8,
+    is_slot_agent: bool,
+};
+
+pub const TaskExecutionBinding = struct {
+    space_id: []const u8,
+    assigned_agent_id: ?[]const u8,
+    session_id: ?[]const u8,
+};
+
 pub const SchedulerSettingsRow = struct {
     workspace_id: []const u8,
     concurrency: i32,
@@ -936,7 +1120,7 @@ fn resolveDbPath(allocator: Allocator) ![:0]u8 {
 
 pub fn ensureWorkspaceDbRoot(allocator: Allocator) ![]u8 {
     const home = std.posix.getenv("HOME") orelse "/tmp";
-    const dir = try std.fs.path.join(allocator, &.{ home, ".cove", "workspaces" });
+    const dir = try std.fs.path.join(allocator, &.{ home, ".nexus", "workspaces" });
     errdefer allocator.free(dir);
     std.fs.cwd().makePath(dir) catch {};
     return dir;
@@ -945,12 +1129,12 @@ pub fn ensureWorkspaceDbRoot(allocator: Allocator) ![]u8 {
 fn defaultWorkspaceDbPath(allocator: Allocator) ![]u8 {
     const root = try ensureWorkspaceDbRoot(allocator);
     defer allocator.free(root);
-    return std.fs.path.join(allocator, &.{ root, "default.cove.db" });
+    return std.fs.path.join(allocator, &.{ root, "default.nexus.db" });
 }
 
 fn currentWorkspaceConfigPath(allocator: Allocator) ![]u8 {
     const home = std.posix.getenv("HOME") orelse "/tmp";
-    const dir = try std.fs.path.join(allocator, &.{ home, ".cove" });
+    const dir = try std.fs.path.join(allocator, &.{ home, ".nexus" });
     defer allocator.free(dir);
     std.fs.cwd().makePath(dir) catch {};
     return std.fs.path.join(allocator, &.{ dir, "current-workspace-path.txt" });
@@ -1003,9 +1187,9 @@ pub fn createManagedWorkspaceDbPath(allocator: Allocator, preferred_name: []cons
     }
     const base_name = std.mem.trimRight(u8, sanitized[0..len], "-.");
     const file_name = if (base_name.len > 0)
-        try std.fmt.allocPrint(allocator, "{d}-{s}.cove.db", .{ std.time.timestamp(), base_name })
+        try std.fmt.allocPrint(allocator, "{d}-{s}.nexus.db", .{ std.time.timestamp(), base_name })
     else
-        try std.fmt.allocPrint(allocator, "{d}-workspace.cove.db", .{std.time.timestamp()});
+        try std.fmt.allocPrint(allocator, "{d}-workspace.nexus.db", .{std.time.timestamp()});
     defer allocator.free(file_name);
 
     return std.fs.path.join(allocator, &.{ root, file_name });
@@ -1070,6 +1254,33 @@ fn freeAgentRows(allocator: Allocator, rows: []AgentRow) void {
         if (row.node_id) |value| allocator.free(value);
     }
     allocator.free(rows);
+}
+
+pub fn freeDispatchAssignments(allocator: Allocator, rows: []DispatchAssignment) void {
+    for (rows) |row| {
+        allocator.free(row.task_id);
+        allocator.free(row.agent_id);
+    }
+    allocator.free(rows);
+}
+
+fn freeIdRows(allocator: Allocator, rows: []Db.IdRow) void {
+    for (rows) |row| {
+        allocator.free(row.id);
+    }
+    allocator.free(rows);
+}
+
+pub fn freeSessionAgentBinding(allocator: Allocator, binding: SessionAgentBinding) void {
+    allocator.free(binding.agent_id);
+    allocator.free(binding.space_id);
+    if (binding.assigned_task_id) |value| allocator.free(value);
+}
+
+pub fn freeTaskExecutionBinding(allocator: Allocator, binding: TaskExecutionBinding) void {
+    allocator.free(binding.space_id);
+    if (binding.assigned_agent_id) |value| allocator.free(value);
+    if (binding.session_id) |value| allocator.free(value);
 }
 
 test "Db persists workspaces, spaces, and scheduler settings across reopen" {
@@ -1145,4 +1356,46 @@ test "Db persists task queue assignment and agent linkage" {
     try std.testing.expectEqualStrings("running", agents_list[0].status);
     try std.testing.expectEqualStrings("task-1", agents_list[0].assigned_task_id.?);
     try std.testing.expect(agents_list[0].started_at != null);
+}
+
+test "Db dispatches queued tasks to idle slot agents by priority" {
+    const allocator = std.testing.allocator;
+    const db_path = try uniqueTestDbPath(allocator);
+    defer allocator.free(db_path);
+    defer std.fs.cwd().deleteFile(std.mem.sliceTo(db_path, 0)) catch {};
+
+    var db = try Db.openPath(allocator, db_path);
+    defer db.close();
+
+    try db.createWorkspace("ws-1", "Workspace", "/repo");
+    try db.createSpace("space-1", "ws-1", "Default", "/repo");
+
+    try db.createTask("task-low", "space-1", "Low", "Low priority", "low", null);
+    try db.createTask("task-high", "space-1", "High", "High priority", "high", null);
+    try db.enqueueTask("task-low");
+    try db.enqueueTask("task-high");
+
+    try db.createAgent("slot-1", "space-1", "claude", "Claude Code");
+    try db.createAgent("slot-2", "space-1", "claude", "Claude Code");
+    try db.createAgent("agent-1", "space-1", "claude", "Claude Code");
+
+    const assignments = try db.dispatchQueuedTasks(allocator, "space-1");
+    defer freeDispatchAssignments(allocator, assignments);
+
+    try std.testing.expectEqual(@as(usize, 2), assignments.len);
+    try std.testing.expectEqualStrings("task-high", assignments[0].task_id);
+    try std.testing.expectEqualStrings("slot-1", assignments[0].agent_id);
+    try std.testing.expectEqualStrings("task-low", assignments[1].task_id);
+    try std.testing.expectEqualStrings("slot-2", assignments[1].agent_id);
+
+    const tasks_list = try db.listTasks(allocator, "space-1", null);
+    defer freeTaskRows(allocator, tasks_list);
+    var low_task_agent_id: ?[]const u8 = null;
+    var high_task_agent_id: ?[]const u8 = null;
+    for (tasks_list) |task| {
+        if (std.mem.eql(u8, task.id, "task-low")) low_task_agent_id = task.assigned_agent_id;
+        if (std.mem.eql(u8, task.id, "task-high")) high_task_agent_id = task.assigned_agent_id;
+    }
+    try std.testing.expectEqualStrings("slot-2", low_task_agent_id.?);
+    try std.testing.expectEqualStrings("slot-1", high_task_agent_id.?);
 }

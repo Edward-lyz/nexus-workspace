@@ -14,7 +14,7 @@ const STATUS_LABELS: Record<string, string> = {
   todo: 'To Do', doing: 'In Progress', done: 'Done',
 };
 const STATUS_COLORS: Record<string, string> = {
-  todo: 'var(--cove-text-faint)', doing: 'var(--cove-warning)', done: 'var(--cove-success)',
+  todo: 'var(--nx-text-tertiary)', doing: 'var(--nx-warning)', done: 'var(--nx-success)',
 };
 const PRIORITY_LABELS: Record<string, string> = {
   low: 'Low', medium: 'Med', high: 'High',

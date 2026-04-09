@@ -78,7 +78,7 @@ export function TaskEditDialog({ taskId, onClose }: Props) {
           {(['low', 'medium', 'high'] as const).map(p => (
             <label key={p} class="agent-radio">
               <input type="radio" name="priority" checked={priority === p} onChange={() => setPriority(p)} />
-              <span class="agent-chip" style={`--agent-color:${p === 'high' ? 'var(--cove-error)' : p === 'medium' ? 'var(--cove-warning)' : 'var(--cove-text-muted)'}`}>
+              <span class="agent-chip" style={`--agent-color:${p === 'high' ? 'var(--nx-error)' : p === 'medium' ? 'var(--nx-warning)' : 'var(--nx-text-secondary)'}`}>
                 {p.charAt(0).toUpperCase() + p.slice(1)}
               </span>
             </label>
@@ -90,7 +90,7 @@ export function TaskEditDialog({ taskId, onClose }: Props) {
           {(['todo', 'doing', 'done'] as const).map(s => (
             <label key={s} class="agent-radio">
               <input type="radio" name="status" checked={status === s} onChange={() => setStatus(s)} />
-              <span class="agent-chip" style={`--agent-color:${s === 'done' ? 'var(--cove-success)' : s === 'doing' ? 'var(--cove-warning)' : 'var(--cove-text-muted)'}`}>
+              <span class="agent-chip" style={`--agent-color:${s === 'done' ? 'var(--nx-success)' : s === 'doing' ? 'var(--nx-warning)' : 'var(--nx-text-secondary)'}`}>
                 {s === 'todo' ? 'To Do' : s === 'doing' ? 'In Progress' : 'Done'}
               </span>
             </label>

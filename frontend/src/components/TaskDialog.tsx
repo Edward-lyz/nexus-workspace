@@ -36,7 +36,7 @@ export function TaskDialog({ onClose }: Props) {
           {(['low', 'medium', 'high'] as const).map(p => (
             <label key={p} class="agent-radio">
               <input type="radio" name="priority" checked={priority === p} onChange={() => setPriority(p)} />
-              <span class="agent-chip" style={`--agent-color:${p === 'high' ? 'var(--cove-error)' : p === 'medium' ? 'var(--cove-warning)' : 'var(--cove-text-muted)'}`}>
+              <span class="agent-chip" style={`--agent-color:${p === 'high' ? 'var(--nx-error)' : p === 'medium' ? 'var(--nx-warning)' : 'var(--nx-text-secondary)'}`}>
                 {p.charAt(0).toUpperCase() + p.slice(1)}
               </span>
             </label>

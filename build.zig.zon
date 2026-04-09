@@ -1,8 +1,8 @@
 .{
-    .name = .cove,
+    .name = .nexus,
     .version = "0.2.0",
     .minimum_zig_version = "0.15.2",
-    .fingerprint = 0xfe1404bc600c7ca,
+    .fingerprint = 0x2d7eadddb9bb58eb,
     .paths = .{""},
     .dependencies = .{
         .webview = .{

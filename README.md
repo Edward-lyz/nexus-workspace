@@ -32,7 +32,7 @@
 │  Zig Daemon                                                 │
 │  • PTY pool (forkpty)                                       │
 │  • Session lifecycle management                             │
-│  • SQLite persistence (~/.cove/cove.db)                     │
+│  • SQLite persistence (~/.nexus/nexus.db)                     │
 │  • HTTP static server + WebSocket JSON-RPC                  │
 └──────────────────────────┬──────────────────────────────────┘
                            │ WebSocket
@@ -81,7 +81,7 @@ zig build -Doptimize=ReleaseFast
 
 # Create app bundle structure
 mkdir -p Nexus.app/Contents/{MacOS,Resources}
-cp zig-out/bin/cove Nexus.app/Contents/MacOS/nexus
+cp zig-out/bin/nexus Nexus.app/Contents/MacOS/nexus
 cp -r frontend/dist/* Nexus.app/Contents/Resources/static/
 
 # Sign for local use
@@ -127,10 +127,6 @@ open Nexus.app
 ├── build.zig
 └── README.md
 ```
-
-## Inspiration
-
-Inspired by [OpenCove](https://github.com/nicepkg/opencove) — rebuilt from scratch for lower resource usage and better multi-agent support.
 
 ## License
 

@@ -5,7 +5,13 @@ import * as store from '../store';
 
 describe('StatusBar', () => {
   it('renders scheduler summary buttons and forwards click handlers', async () => {
+    vi.spyOn(store.ipc, 'call').mockImplementation(async (method: string, params?: Record<string, unknown>) => {
+      if (method === 'node.create') return { id: params?.id ?? 'pane-pending' };
+      throw new Error(`Unexpected method: ${method}`);
+    });
+
     store.schedulerSettings.value = { concurrency: 2, autoDispatch: true, defaultAgentId: 'claude' };
+    store.activeSpaceId.value = 'space-1';
     store.panes.value = [
       { id: 'task-1', kind: 'task', spaceId: 'space-1', taskStatus: 'todo' },
       { id: 'shell-1', kind: 'shell', spaceId: 'space-1', sessionId: 'shell-session', sessionStatus: 'running' },

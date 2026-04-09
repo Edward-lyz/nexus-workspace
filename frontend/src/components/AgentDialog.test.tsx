@@ -14,6 +14,7 @@ describe('AgentDialog', () => {
       if (method === 'node.create') return { id: params?.id ?? 'pane-1' };
       if (method === 'pty.spawn') return { session_id: 'session-7' };
       if (method === 'agent.create') return { id: params?.id ?? 'pane-1' };
+      if (method === 'agent.update') return null;
       throw new Error(`Unexpected method: ${method}`);
     });
 

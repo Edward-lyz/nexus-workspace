@@ -10,9 +10,9 @@ function resetLocalStorage() {
   }
 
   const removableKeys = new Set([
-    'cove-execution-history',
-    'cove-custom-agents',
-    'cove-layout-mode',
+    'nexus-execution-history',
+    'nexus-custom-agents',
+    'nexus-layout-mode',
     'nexus-popout-positions',
   ]);
 

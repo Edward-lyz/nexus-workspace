@@ -298,7 +298,7 @@ export function SettingsDialog({ onClose }: Props) {
             <input
               ref={fileInputRef}
               type="file"
-              accept=".db,.sqlite,.cove.db,application/octet-stream"
+              accept=".db,.sqlite,.nexus.db,application/octet-stream"
               style={{ display: 'none' }}
               onChange={handleFileSelect}
             />

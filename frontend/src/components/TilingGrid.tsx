@@ -26,7 +26,7 @@ export function TilingGrid() {
   useEffect(() => {
     const el = gridRef.current;
     if (!el) return;
-    const gap = 3; // --cove-gap
+    const gap = 3; // --nx-gap
     const update = (w: number) => {
       const colW = mode === 'vertical'
         ? Math.max(280, w - gap * 2)

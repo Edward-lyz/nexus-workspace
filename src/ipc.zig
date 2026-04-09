@@ -18,6 +18,7 @@ pub const Server = struct {
 
     clients: std.ArrayList(Client) = .empty,
     clients_mutex: std.Thread.Mutex = .{},
+    scheduler_mutex: std.Thread.Mutex = .{},
 
     pub fn init(allocator: Allocator, static_root: []const u8, db: db_mod.Db) !Server {
         var server = Server{
@@ -32,7 +33,7 @@ pub const Server = struct {
         server.port = server.listener.?.listen_address.getPort();
         server.running = true;
 
-        std.log.info("cove server on http://127.0.0.1:{d}", .{server.port});
+        std.log.info("nexus server on http://127.0.0.1:{d}", .{server.port});
         return server;
     }
 
@@ -275,6 +276,16 @@ pub const Server = struct {
             self.rpcSchedulerSetSettings(params, id, client);
         } else if (std.mem.eql(u8, method, "scheduler.initPool")) {
             self.rpcSchedulerInitPool(params, id, client);
+        } else if (std.mem.eql(u8, method, "scheduler.dispatch")) {
+            self.rpcSchedulerDispatch(params, id, client);
+        } else if (std.mem.eql(u8, method, "scheduler.handleSessionExit")) {
+            self.rpcSchedulerHandleSessionExit(params, id, client);
+        } else if (std.mem.eql(u8, method, "scheduler.stopTask")) {
+            self.rpcSchedulerStopTask(params, id, client);
+        } else if (std.mem.eql(u8, method, "scheduler.attachTaskSession")) {
+            self.rpcSchedulerAttachTaskSession(params, id, client);
+        } else if (std.mem.eql(u8, method, "scheduler.reconcileSpace")) {
+            self.rpcSchedulerReconcileSpace(params, id, client);
         }
         // State hydration
         else if (std.mem.eql(u8, method, "state.hydrate")) {
@@ -975,6 +986,210 @@ pub const Server = struct {
             const slot_id = std.fmt.bufPrint(&slot_buf, "slot-{d}", .{i}) catch continue;
             self.db.createAgent(slot_id, space_id, provider_id, provider_name) catch {};
         }
+
+        sendResult(client, id, "true");
+    }
+
+    fn rpcSchedulerDispatch(self: *Server, params: std.json.ObjectMap, id: ?std.json.Value, client: *Client) void {
+        const space_id = getStr(params, "space_id") orelse {
+            sendError(client, id, -32602, "Missing space_id");
+            return;
+        };
+
+        self.scheduler_mutex.lock();
+        defer self.scheduler_mutex.unlock();
+
+        const assignments = self.db.dispatchQueuedTasks(self.allocator, space_id) catch |err| {
+            sendError(client, id, -32000, @errorName(err));
+            return;
+        };
+        defer db_mod.freeDispatchAssignments(self.allocator, assignments);
+
+        var buf: [16384]u8 = undefined;
+        var fbs = std.io.fixedBufferStream(&buf);
+        const writer = fbs.writer();
+        writer.writeByte('[') catch return;
+        for (assignments, 0..) |assignment, index| {
+            if (index > 0) writer.writeByte(',') catch return;
+            writer.writeAll("{\"task_id\":") catch return;
+            writeJsonString(writer, assignment.task_id) catch return;
+            writer.writeAll(",\"agent_id\":") catch return;
+            writeJsonString(writer, assignment.agent_id) catch return;
+            writer.writeByte('}') catch return;
+        }
+        writer.writeByte(']') catch return;
+        sendResult(client, id, fbs.getWritten());
+    }
+
+    fn rpcSchedulerHandleSessionExit(self: *Server, params: std.json.ObjectMap, id: ?std.json.Value, client: *Client) void {
+        const session_id = getStr(params, "session_id") orelse {
+            sendError(client, id, -32602, "Missing session_id");
+            return;
+        };
+
+        self.scheduler_mutex.lock();
+        defer self.scheduler_mutex.unlock();
+
+        const binding = self.db.getSessionAgentBinding(self.allocator, session_id) catch |err| {
+            sendError(client, id, -32000, @errorName(err));
+            return;
+        } orelse {
+            sendResult(client, id, "{\"kind\":\"none\"}");
+            return;
+        };
+        defer db_mod.freeSessionAgentBinding(self.allocator, binding);
+
+        var resp_buf: [1024]u8 = undefined;
+        var fbs = std.io.fixedBufferStream(&resp_buf);
+        const writer = fbs.writer();
+        writer.writeByte('{') catch return;
+
+        if (binding.is_slot_agent) {
+            if (binding.assigned_task_id) |task_id| {
+                self.db.unassignTask(task_id) catch |err| {
+                    sendError(client, id, -32000, @errorName(err));
+                    return;
+                };
+                writer.writeAll("\"kind\":\"slot\",\"space_id\":") catch return;
+                writeJsonString(writer, binding.space_id) catch return;
+                writer.writeAll(",\"agent_id\":") catch return;
+                writeJsonString(writer, binding.agent_id) catch return;
+                writer.writeAll(",\"task_id\":") catch return;
+                writeJsonString(writer, task_id) catch return;
+                writer.writeAll(",\"task_status\":\"done\",\"queue_status\":\"completed\",\"agent_status\":\"idle\"") catch return;
+            } else {
+                self.db.updateAgent(binding.agent_id, "idle", null, null, true, true) catch |err| {
+                    sendError(client, id, -32000, @errorName(err));
+                    return;
+                };
+                writer.writeAll("\"kind\":\"slot\",\"space_id\":") catch return;
+                writeJsonString(writer, binding.space_id) catch return;
+                writer.writeAll(",\"agent_id\":") catch return;
+                writeJsonString(writer, binding.agent_id) catch return;
+                writer.writeAll(",\"agent_status\":\"idle\"") catch return;
+            }
+        } else {
+            self.db.updateAgent(binding.agent_id, "exited", null, null, true, true) catch |err| {
+                sendError(client, id, -32000, @errorName(err));
+                return;
+            };
+            writer.writeAll("\"kind\":\"standalone\",\"space_id\":") catch return;
+            writeJsonString(writer, binding.space_id) catch return;
+            writer.writeAll(",\"agent_id\":") catch return;
+            writeJsonString(writer, binding.agent_id) catch return;
+            writer.writeAll(",\"agent_status\":\"exited\"") catch return;
+        }
+
+        writer.writeByte('}') catch return;
+        sendResult(client, id, fbs.getWritten());
+    }
+
+    fn rpcSchedulerStopTask(self: *Server, params: std.json.ObjectMap, id: ?std.json.Value, client: *Client) void {
+        const task_id = getStr(params, "task_id") orelse {
+            sendError(client, id, -32602, "Missing task_id");
+            return;
+        };
+        const requeue = if (params.get("requeue")) |value| value == .bool and value.bool else false;
+
+        self.scheduler_mutex.lock();
+        defer self.scheduler_mutex.unlock();
+
+        const binding = self.db.getTaskExecutionBinding(self.allocator, task_id) catch |err| {
+            sendError(client, id, -32000, @errorName(err));
+            return;
+        } orelse {
+            sendError(client, id, -32000, "Task not found");
+            return;
+        };
+        defer db_mod.freeTaskExecutionBinding(self.allocator, binding);
+
+        if (binding.session_id) |session_id_value| {
+            self.sessions.kill(session_id_value);
+        }
+
+        self.db.resetTaskDispatch(task_id, requeue) catch |err| {
+            sendError(client, id, -32000, @errorName(err));
+            return;
+        };
+
+        var resp_buf: [1024]u8 = undefined;
+        var fbs = std.io.fixedBufferStream(&resp_buf);
+        const writer = fbs.writer();
+        writer.writeByte('{') catch return;
+        writer.writeAll("\"space_id\":") catch return;
+        writeJsonString(writer, binding.space_id) catch return;
+        writer.writeAll(",\"task_id\":") catch return;
+        writeJsonString(writer, task_id) catch return;
+        writer.writeAll(",\"task_status\":\"todo\",\"queue_status\":") catch return;
+        writeJsonString(writer, if (requeue) "queued" else "none") catch return;
+        if (binding.assigned_agent_id) |agent_id| {
+            writer.writeAll(",\"agent_id\":") catch return;
+            writeJsonString(writer, agent_id) catch return;
+        }
+        if (binding.session_id) |session_id_value| {
+            writer.writeAll(",\"session_id\":") catch return;
+            writeJsonString(writer, session_id_value) catch return;
+        }
+        writer.writeAll(",\"agent_status\":\"idle\"") catch return;
+        writer.writeByte('}') catch return;
+        sendResult(client, id, fbs.getWritten());
+    }
+
+    fn rpcSchedulerAttachTaskSession(self: *Server, params: std.json.ObjectMap, id: ?std.json.Value, client: *Client) void {
+        const task_id = getStr(params, "task_id") orelse {
+            sendError(client, id, -32602, "Missing task_id");
+            return;
+        };
+        const session_id = getStr(params, "session_id") orelse {
+            sendError(client, id, -32602, "Missing session_id");
+            return;
+        };
+
+        self.scheduler_mutex.lock();
+        defer self.scheduler_mutex.unlock();
+
+        const binding = self.db.getTaskExecutionBinding(self.allocator, task_id) catch |err| {
+            sendError(client, id, -32000, @errorName(err));
+            return;
+        } orelse {
+            sendError(client, id, -32000, "Task not found");
+            return;
+        };
+        defer db_mod.freeTaskExecutionBinding(self.allocator, binding);
+
+        const agent_id = binding.assigned_agent_id orelse {
+            sendError(client, id, -32000, "Task is not assigned");
+            return;
+        };
+
+        self.db.updateAgent(agent_id, null, session_id, null, false, false) catch |err| {
+            sendError(client, id, -32000, @errorName(err));
+            return;
+        };
+
+        var resp_buf: [1024]u8 = undefined;
+        const resp = std.fmt.bufPrint(
+            &resp_buf,
+            "{{\"space_id\":\"{s}\",\"task_id\":\"{s}\",\"agent_id\":\"{s}\",\"session_id\":\"{s}\",\"agent_status\":\"running\"}}",
+            .{ binding.space_id, task_id, agent_id, session_id },
+        ) catch return;
+        sendResult(client, id, resp);
+    }
+
+    fn rpcSchedulerReconcileSpace(self: *Server, params: std.json.ObjectMap, id: ?std.json.Value, client: *Client) void {
+        const space_id = getStr(params, "space_id") orelse {
+            sendError(client, id, -32602, "Missing space_id");
+            return;
+        };
+        const requeue = if (params.get("requeue")) |value| value == .bool and value.bool else true;
+
+        self.scheduler_mutex.lock();
+        defer self.scheduler_mutex.unlock();
+
+        self.db.reconcileSlotDispatchState(self.allocator, space_id, requeue) catch |err| {
+            sendError(client, id, -32000, @errorName(err));
+            return;
+        };
 
         sendResult(client, id, "true");
     }

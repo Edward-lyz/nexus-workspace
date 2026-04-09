@@ -95,6 +95,39 @@ export interface SchedulerSettings {
   defaultAgentId: string;
 }
 
+interface SchedulerDispatchAssignment {
+  task_id: string;
+  agent_id: string;
+}
+
+interface SchedulerSessionExitResult {
+  kind: 'none' | 'slot' | 'standalone';
+  space_id?: string;
+  task_id?: string;
+  agent_id?: string;
+  task_status?: TaskEntity['status'];
+  queue_status?: TaskEntity['queueStatus'];
+  agent_status?: AgentEntity['status'];
+}
+
+interface SchedulerStopTaskResult {
+  space_id: string;
+  task_id: string;
+  task_status: TaskEntity['status'];
+  queue_status: TaskEntity['queueStatus'];
+  agent_id?: string;
+  session_id?: string;
+  agent_status?: AgentEntity['status'];
+}
+
+interface SchedulerAttachTaskSessionResult {
+  space_id: string;
+  task_id: string;
+  agent_id: string;
+  session_id: string;
+  agent_status?: AgentEntity['status'];
+}
+
 const DEFAULT_SCHEDULER_SETTINGS: SchedulerSettings = {
   concurrency: 4,
   autoDispatch: true,
@@ -142,8 +175,9 @@ export const agentPool = computed(() => {
 // -- Task Queue (derived from tasks signal) --
 export const taskQueue = computed(() => {
   const queue: TaskPoolEntry[] = [];
+  const activeId = activeSpaceId.value;
   for (const [, task] of tasks.value) {
-    if (task.queueStatus !== 'none') {
+    if (task.spaceId === activeId && task.queueStatus !== 'none') {
       queue.push({
         taskId: task.id,
         status: task.queueStatus as TaskPoolEntry['status'],
@@ -234,7 +268,7 @@ export function clearExecutionHistory() {
 function saveExecutionHistory() {
   try {
     if (typeof globalThis.localStorage?.setItem !== 'function') return;
-    localStorage.setItem('cove-execution-history', JSON.stringify(executionHistory.value));
+    localStorage.setItem('nexus-execution-history', JSON.stringify(executionHistory.value));
   } catch (e) {
     console.error('Failed to save execution history:', e);
   }
@@ -249,7 +283,7 @@ export async function loadExecutionHistory() {
   }
   try {
     if (typeof globalThis.localStorage?.getItem !== 'function') return;
-    const saved = localStorage.getItem('cove-execution-history');
+    const saved = localStorage.getItem('nexus-execution-history');
     if (saved) {
       executionHistory.value = JSON.parse(saved);
     }
@@ -298,7 +332,7 @@ export function updateCustomAgent(id: string, updates: Partial<AgentProvider>) {
 function saveCustomAgents() {
   try {
     if (typeof globalThis.localStorage?.setItem !== 'function') return;
-    localStorage.setItem('cove-custom-agents', JSON.stringify(customAgents.value));
+    localStorage.setItem('nexus-custom-agents', JSON.stringify(customAgents.value));
   } catch (e) {
     console.error('Failed to save custom agents:', e);
   }
@@ -313,7 +347,7 @@ export async function loadCustomAgents() {
   }
   try {
     if (typeof globalThis.localStorage?.getItem !== 'function') return;
-    const saved = localStorage.getItem('cove-custom-agents');
+    const saved = localStorage.getItem('nexus-custom-agents');
     if (saved) {
       customAgents.value = JSON.parse(saved);
     }
@@ -398,7 +432,7 @@ export function loadPopoutPositions() {
 function saveLayoutMode() {
   try {
     if (typeof globalThis.localStorage?.setItem !== 'function') return;
-    localStorage.setItem('cove-layout-mode', layoutMode.value);
+    localStorage.setItem('nexus-layout-mode', layoutMode.value);
   } catch {}
   setWorkspaceSetting(WORKSPACE_SETTING_KEYS.layoutMode, layoutMode.value);
 }
@@ -411,7 +445,7 @@ export async function loadLayoutMode() {
   }
   try {
     if (typeof globalThis.localStorage?.getItem !== 'function') return;
-    const saved = localStorage.getItem('cove-layout-mode');
+    const saved = localStorage.getItem('nexus-layout-mode');
     if (saved === 'horizontal' || saved === 'vertical') {
       layoutMode.value = saved;
     }
@@ -880,7 +914,8 @@ export async function initializeAgentPool(concurrency: number): Promise<void> {
   agents.value = newAgents;
 
   await pruneExcessIdleSlots(space.id, concurrency);
-  await reconcileStaleDispatchState();
+  await reconcileStaleDispatchState(space.id);
+  await runSchedulerDispatch(space.id);
 }
 
 export async function resizeAgentPool(newSize: number): Promise<void> {
@@ -958,6 +993,38 @@ function applyTaskEntity(taskId: string, updater: (task: TaskEntity) => TaskEnti
   return updated;
 }
 
+async function refreshSpaceEntities(spaceId: string): Promise<void> {
+  const [tasksList, agentsList] = await Promise.all([
+    ipc.call<any[]>('task.list', { space_id: spaceId }),
+    ipc.call<any[]>('agent.list', { space_id: spaceId }),
+  ]);
+
+  const refreshedTasks = new Map(tasks.value);
+  for (const [id, task] of refreshedTasks) {
+    if (task.spaceId === spaceId) {
+      refreshedTasks.delete(id);
+    }
+  }
+  for (const rawTask of tasksList) {
+    const task = convertTask(rawTask);
+    refreshedTasks.set(task.id, task);
+    updateTaskPaneFromEntity(task);
+  }
+  tasks.value = refreshedTasks;
+
+  const refreshedAgents = new Map(agents.value);
+  for (const [id, agent] of refreshedAgents) {
+    if (agent.spaceId === spaceId) {
+      refreshedAgents.delete(id);
+    }
+  }
+  for (const rawAgent of agentsList) {
+    const agent = convertAgent(rawAgent);
+    refreshedAgents.set(agent.id, agent);
+  }
+  agents.value = refreshedAgents;
+}
+
 function setTaskDispatchLocal(taskId: string, requeue: boolean): void {
   applyTaskEntity(taskId, (task) => ({
     ...task,
@@ -992,57 +1059,97 @@ function clearAgentAssignmentLocal(agentId: string, status: AgentEntity['status'
   });
 }
 
-async function resetTaskDispatch(taskId: string, requeue = schedulerSettings.value.autoDispatch): Promise<void> {
+function setTaskAssignmentLocal(taskId: string, agentId: string): void {
+  applyTaskEntity(taskId, (task) => ({
+    ...task,
+    assignedAgentId: agentId,
+    queueStatus: 'dispatched',
+    dispatchedAt: Date.now(),
+    status: 'doing',
+  }));
+
+  const agent = agents.value.get(agentId);
+  if (!agent) return;
+  agents.value = new Map(agents.value).set(agentId, {
+    ...agent,
+    assignedTaskId: taskId,
+    status: 'running',
+    startedAt: Date.now(),
+  });
+}
+
+let isSchedulerDispatchRunning = false;
+let scheduleDispatchRerunRequested = false;
+
+async function runSchedulerDispatch(spaceId = activeSpaceId.value): Promise<void> {
+  if (!spaceId || !schedulerSettings.value.autoDispatch) return;
+
+  if (isSchedulerDispatchRunning) {
+    scheduleDispatchRerunRequested = true;
+    return;
+  }
+
+  isSchedulerDispatchRunning = true;
+
   try {
-    await ipc.call('task.resetDispatch', { id: taskId, requeue });
+    while (true) {
+      const assignments = await ipc.call<SchedulerDispatchAssignment[]>('scheduler.dispatch', {
+        space_id: spaceId,
+      });
+
+      if (!assignments.length) break;
+
+      for (const assignment of assignments) {
+        setTaskAssignmentLocal(assignment.task_id, assignment.agent_id);
+        await startAssignedTask(assignment.task_id, assignment.agent_id);
+      }
+
+      if (!scheduleDispatchRerunRequested) break;
+      scheduleDispatchRerunRequested = false;
+    }
   } catch (err) {
-    console.error('task.resetDispatch failed:', err);
+    console.error('scheduler.dispatch failed:', err);
+  } finally {
+    isSchedulerDispatchRunning = false;
+    if (scheduleDispatchRerunRequested) {
+      scheduleDispatchRerunRequested = false;
+      queueMicrotask(() => {
+        void runSchedulerDispatch(spaceId);
+      });
+    }
+  }
+}
+
+async function stopTaskExecution(taskId: string, requeue = schedulerSettings.value.autoDispatch): Promise<void> {
+  try {
+    const result = await ipc.call<SchedulerStopTaskResult>('scheduler.stopTask', { task_id: taskId, requeue });
+
+    if (result.agent_id) {
+      clearAgentAssignmentLocal(result.agent_id, result.agent_status ?? 'idle', true);
+    }
+    setTaskDispatchLocal(taskId, requeue);
+  } catch (err) {
+    console.error('scheduler.stopTask failed:', err);
+    return;
   }
 
   const task = tasks.value.get(taskId);
-  if (task?.assignedAgentId) {
-    clearAgentAssignmentLocal(task.assignedAgentId, 'idle', true);
+  if (requeue && task) {
+    await runSchedulerDispatch(task.spaceId);
   }
-  setTaskDispatchLocal(taskId, requeue);
 }
 
-async function reconcileStaleDispatchState(): Promise<void> {
-  const staleTaskIds = new Set<string>();
+async function reconcileStaleDispatchState(spaceId = activeSpaceId.value): Promise<void> {
+  if (!spaceId) return;
 
-  for (const task of tasks.value.values()) {
-    if (
-      isSlotAgentId(task.assignedAgentId) &&
-      (task.queueStatus === 'dispatched' || task.status === 'doing')
-    ) {
-      staleTaskIds.add(task.id);
-    }
-  }
-
-  for (const agent of agents.value.values()) {
-    if (!isSlotAgentId(agent.id)) continue;
-
-    if (agent.status === 'running' && agent.assignedTaskId) {
-      staleTaskIds.add(agent.assignedTaskId);
-      continue;
-    }
-
-    if (agent.status === 'running' || agent.sessionId || agent.assignedTaskId) {
-      try {
-        await ipc.call('agent.update', {
-          id: agent.id,
-          status: 'idle',
-          clear_session_id: true,
-          clear_assignment: true,
-        });
-      } catch (err) {
-        console.error('agent.update failed:', err);
-      }
-      clearAgentAssignmentLocal(agent.id, 'idle', true);
-    }
-  }
-
-  for (const taskId of staleTaskIds) {
-    await resetTaskDispatch(taskId);
+  try {
+    await ipc.call('scheduler.reconcileSpace', {
+      space_id: spaceId,
+      requeue: schedulerSettings.value.autoDispatch,
+    });
+    await refreshSpaceEntities(spaceId);
+  } catch (err) {
+    console.error('scheduler.reconcileSpace failed:', err);
   }
 }
 
@@ -1148,6 +1255,7 @@ async function spawnTerminal(
   agentName?: string,
   command?: string,
   prompt?: string,
+  persistAgentEntity = true,
 ): Promise<PaneState | null> {
   let space = activeSpace.value;
   if (!space) {
@@ -1202,7 +1310,7 @@ async function spawnTerminal(
   scheduleIdleTransition(result.session_id);
 
   // Persist agent to backend for restoration on reload
-  if (kind === 'agent' && agentName) {
+  if (kind === 'agent' && agentName && persistAgentEntity) {
     const agentProvider = allAgents.value.find(a => a.name === agentName) ?? BUILTIN_AGENTS.find(a => a.name === agentName);
     ipc.call('agent.create', {
       id: paneId,
@@ -1293,22 +1401,6 @@ async function activatePendingAgentPane(paneId: string, agentId: string, prompt:
   });
   scheduleIdleTransition(result.session_id);
 
-  ipc.call('agent.create', {
-    id: pane.id,
-    space_id: pane.spaceId,
-    provider_id: agent.id,
-    provider_name: agent.name,
-    status: 'running',
-    session_id: result.session_id,
-    prompt,
-    node_id: pane.id,
-  }).then(() => ipc.call('agent.update', {
-    id: pane.id,
-    status: 'running',
-    session_id: result.session_id,
-    prompt,
-  })).catch((err) => console.warn('agent.create failed:', err));
-
   setTimeout(() => {
     ipc.call('pty.write', { session_id: result.session_id, data: prompt + '\r' }).catch(() => {});
   }, 2500);
@@ -1318,12 +1410,12 @@ async function activatePendingAgentPane(paneId: string, agentId: string, prompt:
 
 // -- Public actions --
 
-export async function spawnAgent(agentId: string, prompt: string): Promise<PaneState | null> {
+export async function spawnAgent(agentId: string, prompt: string, persistAgentEntity = true): Promise<PaneState | null> {
   const agent = allAgents.value.find(a => a.id === agentId) ?? BUILTIN_AGENTS.find(a => a.id === agentId);
   if (!agent) return null;
 
   // Launch interactive TUI
-  const pane = await spawnTerminal('agent', agent.name, agent.command, prompt);
+  const pane = await spawnTerminal('agent', agent.name, agent.command, prompt, persistAgentEntity);
 
   // Record execution history
   if (pane) {
@@ -1363,7 +1455,7 @@ export async function spawnShellForTask(taskPaneId: string): Promise<void> {
 }
 
 export async function spawnAgentForTask(taskPaneId: string, agentId: string, prompt: string): Promise<void> {
-  const agentPane = await spawnAgent(agentId, prompt);
+  const agentPane = await spawnAgent(agentId, prompt, false);
   if (agentPane) {
     updatePane(agentPane.id, { embedded: true });
     linkPane(taskPaneId, agentPane.id);
@@ -1461,37 +1553,14 @@ export async function enqueueTask(taskId: string): Promise<void> {
   try {
     await ipc.call('task.enqueue', { id: taskId });
 
-    applyTaskEntity(taskId, (task) => ({ ...task, queueStatus: 'queued', queuedAt: Date.now() }));
+    const task = applyTaskEntity(taskId, (currentTask) => ({
+      ...currentTask,
+      queueStatus: 'queued',
+      queuedAt: Date.now(),
+    }));
+    await runSchedulerDispatch(task?.spaceId);
   } catch (err) {
     console.error('task.enqueue failed:', err);
-  }
-}
-
-// Assign task to agent (via backend with bidirectional update)
-export async function assignTaskToAgent(taskId: string, agentId: string): Promise<void> {
-  try {
-    await ipc.call('task.assign', { task_id: taskId, agent_id: agentId });
-
-    applyTaskEntity(taskId, (task) => ({
-      ...task,
-      assignedAgentId: agentId,
-      queueStatus: 'dispatched',
-      dispatchedAt: Date.now(),
-      status: 'doing',
-    }));
-
-    const agent = agents.value.get(agentId);
-    if (agent) {
-      const updatedAgent = {
-        ...agent,
-        assignedTaskId: taskId,
-        status: 'running' as const,
-        startedAt: Date.now(),
-      };
-      agents.value = new Map(agents.value).set(agentId, updatedAgent);
-    }
-  } catch (err) {
-    console.error('task.assign failed:', err);
   }
 }
 
@@ -1570,21 +1639,25 @@ async function deletePaneInternal(paneId: string, origin: 'direct' | 'task-delet
   const linkedTaskPane = pane.kind !== 'task'
     ? panes.value.find(p => p.kind === 'task' && p.linkedPaneId === paneId)
     : undefined;
+  const linkedTask = linkedTaskPane ? tasks.value.get(linkedTaskPane.id) : undefined;
+  const stopManagedTaskFromBackend = origin === 'direct'
+    && pane.kind === 'agent'
+    && Boolean(linkedTask)
+    && linkedTask.status !== 'done';
 
-  if (pane.sessionId && pane.sessionStatus !== 'exited') {
+  if (pane.sessionId && pane.sessionStatus !== 'exited' && !stopManagedTaskFromBackend) {
     requestSessionKill(pane.sessionId);
   }
 
   if (linkedTaskPane && origin === 'direct') {
-    const linkedTask = tasks.value.get(linkedTaskPane.id);
     if (pane.kind === 'agent' && linkedTask && linkedTask.status !== 'done') {
-      await resetTaskDispatch(linkedTask.id);
+      await stopTaskExecution(linkedTask.id, false);
     } else if (pane.kind === 'shell') {
       updatePane(linkedTaskPane.id, { taskStatus: 'todo' });
     }
   }
 
-  if (pane.kind === 'agent' && !isSlotAgentId(pane.id)) {
+  if (pane.kind === 'agent' && !isSlotAgentId(pane.id) && agents.value.has(pane.id)) {
     const newAgents = new Map(agents.value);
     newAgents.delete(pane.id);
     agents.value = newAgents;
@@ -1638,40 +1711,21 @@ export async function markSessionExited(sessionId: string): Promise<void> {
   panes.value = panes.value.map(p =>
     p.sessionId === sessionId ? { ...p, sessionStatus: 'exited' as const, needsAttention: false } : p
   );
-
-  await handleAgentCompletion(sessionId);
-}
-
-async function handleAgentCompletion(sessionId: string): Promise<void> {
-  const slotAgent = Array.from(agents.value.values()).find(
-    (agent) => isSlotAgentId(agent.id) && agent.sessionId === sessionId,
-  );
-
-  if (slotAgent?.assignedTaskId) {
-    try {
-      await ipc.call('task.unassign', { id: slotAgent.assignedTaskId });
-    } catch (err) {
-      console.error('task.unassign failed:', err);
+  try {
+    const result = await ipc.call<SchedulerSessionExitResult>('scheduler.handleSessionExit', { session_id: sessionId });
+    if (result.kind === 'slot') {
+      if (result.task_id) completeTaskLocal(result.task_id);
+      if (result.agent_id) clearAgentAssignmentLocal(result.agent_id, result.agent_status ?? 'idle', true);
+      if (result.space_id) {
+        await pruneExcessIdleSlots(result.space_id);
+        await runSchedulerDispatch(result.space_id);
+      }
+    } else if (result.kind === 'standalone' && result.agent_id) {
+      clearAgentAssignmentLocal(result.agent_id, result.agent_status ?? 'exited', true);
     }
-    completeTaskLocal(slotAgent.assignedTaskId);
-    clearAgentAssignmentLocal(slotAgent.id, 'idle', true);
-    await pruneExcessIdleSlots(slotAgent.spaceId);
+  } catch (err) {
+    console.error('scheduler.handleSessionExit failed:', err);
   }
-
-  const standaloneAgent = Array.from(agents.value.values()).find(
-    (agent) => !isSlotAgentId(agent.id) && agent.sessionId === sessionId,
-  );
-  if (!standaloneAgent) return;
-
-  clearAgentAssignmentLocal(standaloneAgent.id, 'exited', true);
-  await ipc.call('agent.update', {
-    id: standaloneAgent.id,
-    status: 'exited',
-    clear_session_id: true,
-    clear_assignment: true,
-  }).catch((err) => {
-    console.error('agent.update failed:', err);
-  });
 }
 
 // -- Workspace Path (default working directory) --
@@ -1759,7 +1813,7 @@ export async function cloneTaskToAgent(
 
   if (oldLinked) {
     panes.value = panes.value.filter(p => p.id !== oldLinked.id);
-    if (oldLinked.kind === 'agent' && !isSlotAgentId(oldLinked.id)) {
+    if (oldLinked.kind === 'agent' && !isSlotAgentId(oldLinked.id) && agents.value.has(oldLinked.id)) {
       const newAgents = new Map(agents.value);
       newAgents.delete(oldLinked.id);
       agents.value = newAgents;
@@ -2497,43 +2551,11 @@ export async function importWorkspace(file: File): Promise<void> {
   }
 }
 
-// -- Auto dispatch effect (Pool-based, now with backend persistence) --
+// -- Backend-authoritative scheduler flow --
 
-// Track dispatching state to prevent duplicate dispatches
-let isDispatching = false;
-
-// Function to trigger a re-check of pending tasks
-// Called after dispatching completes to ensure queued tasks are processed
-function scheduleDispatchCheck() {
-  if (isDispatching) return;
-
-  const settings = schedulerSettings.value;
-  const idle = idleSlots.value;
-  const queued = queuedTasks.value;
-
-  if (!settings.autoDispatch) return;
-
-  if (idle.length > 0 && queued.length > 0) {
-    isDispatching = true;
-
-    const dispatchCount = Math.min(idle.length, queued.length);
-    const dispatches: Promise<void>[] = [];
-
-    for (let i = 0; i < dispatchCount; i++) {
-      dispatches.push(dispatchTaskToSlot(queued[i].taskId, idle[i].slotId));
-    }
-
-    Promise.all(dispatches).finally(() => {
-      isDispatching = false;
-      // Re-check after current batch completes
-      queueMicrotask(scheduleDispatchCheck);
-    });
-  }
-}
-
-async function dispatchTaskToSlot(taskId: string, slotId: string): Promise<void> {
+async function startAssignedTask(taskId: string, slotId: string): Promise<void> {
   const slot = agentPool.value.get(slotId);
-  if (!slot || slot.status !== 'idle') return;
+  if (!slot) return;
 
   const task = tasks.value.get(taskId);
   if (!task) return;
@@ -2547,31 +2569,41 @@ async function dispatchTaskToSlot(taskId: string, slotId: string): Promise<void>
     : (schedulerSettings.value.defaultAgentId?.trim() || slot.agentProviderId);
   const prompt = task.description || task.title;
 
-  // 1. Assign task to agent via backend (handles bidirectional update)
-  await assignTaskToAgent(taskId, slotId);
-
-  // 2. Spawn fresh agent process
+  // 1. Spawn or activate the embedded agent pane for the assigned task
   const agentPane = linkedPane?.sessionStatus === 'pending'
     ? await activatePendingAgentPane(linkedPane.id, agentProviderId, prompt)
-    : await spawnAgent(agentProviderId, prompt);
+    : await spawnAgent(agentProviderId, prompt, false);
 
   if (!agentPane?.sessionId) {
-    await resetTaskDispatch(taskId);
+    await stopTaskExecution(taskId);
     return;
   }
 
-  // 3. Update agent entity with session ID
-  const agent = agents.value.get(slotId);
-  if (agent) {
-    const updated = { ...agent, sessionId: agentPane.sessionId };
-    agents.value = new Map(agents.value).set(slotId, updated);
-
-    await ipc.call('agent.update', { id: slotId, session_id: agentPane.sessionId }).catch((err) => {
-      console.error('agent.update failed:', err);
+  // 2. Hand session ownership back to the backend scheduler
+  let attachResult: SchedulerAttachTaskSessionResult;
+  try {
+    attachResult = await ipc.call<SchedulerAttachTaskSessionResult>('scheduler.attachTaskSession', {
+      task_id: taskId,
+      session_id: agentPane.sessionId,
     });
+  } catch (err) {
+    console.error('scheduler.attachTaskSession failed:', err);
+    await deletePaneInternal(agentPane.id, 'task-delete');
+    await stopTaskExecution(taskId);
+    return;
   }
 
-  // 4. Link agent pane to task (embedded)
+  const agent = agents.value.get(attachResult.agent_id);
+  if (agent) {
+    const updated = {
+      ...agent,
+      status: attachResult.agent_status ?? 'running',
+      sessionId: attachResult.session_id,
+    };
+    agents.value = new Map(agents.value).set(attachResult.agent_id, updated);
+  }
+
+  // 3. Link the running pane to the task for UI
   updatePane(agentPane.id, { embedded: true });
   linkPane(taskId, agentPane.id);
   updatePane(taskId, { taskStatus: 'doing' });
@@ -2583,25 +2615,6 @@ effect(() => {
   const queued = queuedTasks.value;
 
   if (!settings.autoDispatch) return;
-  if (isDispatching) return;
-
-  if (idle.length > 0 && queued.length > 0) {
-    isDispatching = true;
-
-    // Dispatch tasks to available slots
-    const dispatchCount = Math.min(idle.length, queued.length);
-    const dispatches: Promise<void>[] = [];
-
-    for (let i = 0; i < dispatchCount; i++) {
-      dispatches.push(dispatchTaskToSlot(queued[i].taskId, idle[i].slotId));
-    }
-
-    Promise.all(dispatches).finally(() => {
-      isDispatching = false;
-      // Re-check after current batch completes to handle newly freed slots
-      queueMicrotask(scheduleDispatchCheck);
-    });
-  }
 
   const waitingTaskIds = queued.slice(idle.length).map((entry) => entry.taskId);
   for (const taskId of waitingTaskIds) {
