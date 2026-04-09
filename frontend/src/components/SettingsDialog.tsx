@@ -67,7 +67,7 @@ export function SettingsDialog({ onClose }: Props) {
     const wsId = currentWorkspaceId.value;
     if (!wsId) { alert('No workspace loaded'); return; }
     try {
-      const json = await exportWorkspace(wsId);
+      const json = await exportWorkspace();
       const blob = new Blob([json], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
