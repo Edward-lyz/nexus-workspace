@@ -68,7 +68,7 @@ html, body {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: radial-gradient(ellipse at center, var(--nx-ink-raised) 0%, var(--nx-ink) 70%);
+  background: var(--nx-ink);
 }
 
 .tiling-grid.empty::after {
@@ -576,8 +576,8 @@ html, body {
   border-right: 1px solid var(--nx-glass-border);
   display: flex;
   flex-direction: column;
-  padding: var(--nx-space-4);
-  gap: var(--nx-space-4);
+  padding: var(--nx-space-3) var(--nx-space-3);
+  gap: var(--nx-space-3);
   overflow-y: auto;
   user-select: none;
   -webkit-user-select: none;
@@ -598,15 +598,11 @@ html, body {
 }
 
 .sidebar-logo {
-  font-family: var(--nx-font-mono);
-  font-size: var(--nx-text-xl);
+  font-family: var(--nx-font-sans);
+  font-size: var(--nx-text-md);
   font-weight: 700;
   color: var(--nx-text-primary);
   letter-spacing: var(--nx-tracking-tight);
-  background: linear-gradient(135deg, var(--nx-text-primary) 0%, var(--nx-accent) 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
 }
 
 /* Workspace working directory */
@@ -697,11 +693,11 @@ html, body {
 }
 
 .sidebar-section-title {
-  font-family: var(--nx-font-mono);
-  font-size: var(--nx-text-xs);
+  font-family: var(--nx-font-sans);
+  font-size: 11px;
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: var(--nx-tracking-caps);
+  letter-spacing: 0.06em;
   color: var(--nx-text-ghost);
 }
 
@@ -709,24 +705,21 @@ html, body {
   width: 28px;
   height: 28px;
   border-radius: var(--nx-radius-sm);
-  border: 1px solid var(--nx-border);
-  background: var(--nx-surface-hover);
+  border: none;
+  background: transparent;
   color: var(--nx-text-tertiary);
-  font-family: var(--nx-font-mono);
+  font-family: var(--nx-font-sans);
   font-size: var(--nx-text-sm);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
   transition: all var(--nx-transition-fast);
-  backdrop-filter: blur(14px) saturate(150%);
-  -webkit-backdrop-filter: blur(14px) saturate(150%);
 }
 
 .sidebar-icon-btn:hover {
   background: var(--nx-surface-active);
   color: var(--nx-text-primary);
-  border-color: var(--nx-border-strong);
 }
 
 .sidebar-icon-btn:active {
@@ -743,10 +736,10 @@ html, body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: var(--nx-space-2) var(--nx-space-3);
-  border-radius: var(--nx-radius-md);
+  padding: 4px var(--nx-space-2);
+  border-radius: var(--nx-radius-sm);
   cursor: pointer;
-  transition: all var(--nx-transition-fast);
+  transition: background var(--nx-transition-fast);
   border: 1px solid transparent;
 }
 
@@ -756,12 +749,13 @@ html, body {
 
 .sidebar-item.active {
   background: var(--nx-surface-selected);
-  border-color: var(--nx-accent);
+  border-color: transparent;
 }
 
 .sidebar-item-label {
-  font-family: var(--nx-font-mono);
+  font-family: var(--nx-font-sans);
   font-size: var(--nx-text-sm);
+  font-weight: 500;
   color: var(--nx-text-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -789,47 +783,39 @@ html, body {
 }
 
 .space-actions {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: var(--nx-space-2);
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
 }
 
 .sidebar-btn {
-  padding: var(--nx-space-3) var(--nx-space-2);
-  border-radius: var(--nx-radius-md);
-  border: 1px solid var(--nx-border-strong);
-  background: var(--nx-surface-hover);
+  padding: 4px var(--nx-space-2);
+  border-radius: var(--nx-radius-sm);
+  border: none;
+  background: transparent;
   color: var(--nx-text-secondary);
-  font-family: var(--nx-font-mono);
-  font-size: var(--nx-text-xs);
+  font-family: var(--nx-font-sans);
+  font-size: var(--nx-text-sm);
   font-weight: 500;
   cursor: pointer;
-  transition: all var(--nx-transition-fast);
+  transition: background var(--nx-transition-fast);
   text-align: center;
-  backdrop-filter: blur(18px) saturate(160%);
-  -webkit-backdrop-filter: blur(18px) saturate(160%);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
 
 .sidebar-btn:hover {
-  background: var(--nx-surface-active);
+  background: var(--nx-surface-hover);
   color: var(--nx-text-primary);
-  border-color: var(--nx-border-strong);
-  transform: translateY(-1px);
 }
 
 .sidebar-btn.task:hover {
-  border-color: var(--nx-accent);
   color: var(--nx-accent);
 }
 
 .sidebar-btn.agent:hover {
-  border-color: #cba6f7;
-  color: #cba6f7;
+  color: #9333ea;
 }
 
 .sidebar-btn.note:hover {
-  border-color: var(--nx-warning);
   color: var(--nx-warning);
 }
 
@@ -1007,13 +993,8 @@ html, body {
   align-items: center;
   justify-content: space-between;
   padding: 0 var(--nx-space-3);
-  background:
-    linear-gradient(90deg, rgba(255, 255, 255, 0.04) 0%, transparent 48%, rgba(255, 255, 255, 0.04) 100%),
-    color-mix(in srgb, var(--nx-ink-raised) 84%, transparent);
+  background: var(--nx-ink-raised);
   border-top: 1px solid var(--nx-glass-border);
-  backdrop-filter: blur(18px) saturate(150%);
-  -webkit-backdrop-filter: blur(18px) saturate(150%);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
 .statusbar-left,
@@ -1188,9 +1169,7 @@ html, body {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.6);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  background: rgba(0, 0, 0, 0.4);
   animation: fadeIn var(--nx-transition-base) ease-out;
 }
 
@@ -1203,11 +1182,11 @@ html, body {
   width: 400px;
   max-width: 90vw;
   padding: var(--nx-space-6);
-  border-radius: var(--nx-radius-xl);
+  border-radius: var(--nx-radius-lg);
   border: 1px solid var(--nx-glass-border);
-  background: var(--nx-ink-elevated);
+  background: var(--nx-ink-float);
   box-shadow: var(--nx-shadow-lg);
-  animation: dialogIn var(--nx-transition-slow) var(--nx-spring);
+  animation: dialogIn var(--nx-transition-base) ease-out;
 }
 
 @keyframes dialogIn {
@@ -1226,7 +1205,7 @@ html, body {
 }
 
 .dialog-header {
-  font-family: var(--nx-font-mono);
+  font-family: var(--nx-font-sans);
   font-size: var(--nx-text-lg);
   font-weight: 600;
   color: var(--nx-text-primary);

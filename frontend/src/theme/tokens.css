@@ -3,7 +3,7 @@
    Neo-utilitarian aesthetic: Bloomberg density × Liquid Glass fluidity
    ═══════════════════════════════════════════════════════════════════════════ */
 
-@import url('https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500;600;700&family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,400&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600;700&display=swap');
 
 :root {
   /* ─────────────────────────────────────────────────────────────────────────
@@ -25,7 +25,7 @@
      DM Sans: warm humanist for body text
      ───────────────────────────────────────────────────────────────────────── */
   --nx-font-mono: 'Geist Mono', 'SF Mono', 'Cascadia Code', monospace;
-  --nx-font-sans: 'DM Sans', system-ui, sans-serif;
+  --nx-font-sans: 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
 
   --nx-text-xs: calc(11px * var(--nx-scale));
   --nx-text-sm: calc(12px * var(--nx-scale));
@@ -45,74 +45,72 @@
   --nx-tracking-caps: 0.1em;
 
   /* ─────────────────────────────────────────────────────────────────────────
-     DARK THEME — "One Dark"
-     Consistent with terminal, high readability
+     DARK THEME — "Notion Dark"
+     Deep neutrals, high text contrast, minimal chrome
      ───────────────────────────────────────────────────────────────────────── */
 
-  /* Core palette - One Dark based */
-  --nx-ink: #21252b;
-  --nx-ink-raised: #282c34;
-  --nx-ink-elevated: #2c323c;
-  --nx-ink-float: #333842;
+  /* Core palette - Notion dark */
+  --nx-ink: #191919;
+  --nx-ink-raised: #202020;
+  --nx-ink-elevated: #252525;
+  --nx-ink-float: #2f2f2f;
 
-  /* Accent: One Dark blue */
-  --nx-accent: #61afef;
-  --nx-accent-dim: #528bff;
-  --nx-accent-glow: rgba(97, 175, 239, 0.2);
-  --nx-accent-subtle: rgba(97, 175, 239, 0.1);
+  /* Accent: Notion blue (dark variant) */
+  --nx-accent: #529cca;
+  --nx-accent-dim: #3b82b0;
+  --nx-accent-glow: rgba(82, 156, 202, 0.18);
+  --nx-accent-subtle: rgba(82, 156, 202, 0.1);
 
-  /* Semantic - One Dark colors */
-  --nx-success: #98c379;
-  --nx-warning: #e5c07b;
-  --nx-error: #e06c75;
-  --nx-info: #61afef;
+  /* Semantic */
+  --nx-success: #4dab9a;
+  --nx-warning: #cb912f;
+  --nx-error: #eb5757;
+  --nx-info: #529cca;
 
-  /* Text hierarchy - solid colors for readability */
-  --nx-text-primary: #abb2bf;
-  --nx-text-secondary: #9099a6;
-  --nx-text-tertiary: #6b7280;
-  --nx-text-ghost: #4b5263;
+  /* Text hierarchy - Notion dark text scale */
+  --nx-text-primary: #e3e3e3;
+  --nx-text-secondary: #9b9b9b;
+  --nx-text-tertiary: #6b6b6b;
+  --nx-text-ghost: #454545;
 
-  /* Borders & Lines */
-  --nx-border: rgba(255, 255, 255, 0.1);
-  --nx-border-subtle: rgba(255, 255, 255, 0.05);
-  --nx-border-strong: rgba(255, 255, 255, 0.18);
+  /* Borders — barely visible */
+  --nx-border: rgba(255, 255, 255, 0.07);
+  --nx-border-subtle: rgba(255, 255, 255, 0.04);
+  --nx-border-strong: rgba(255, 255, 255, 0.13);
   --nx-border-focus: var(--nx-accent);
 
   /* Surfaces */
-  --nx-surface: rgba(40, 44, 52, 0.9);
+  --nx-surface: #191919;
   --nx-surface-hover: rgba(255, 255, 255, 0.05);
-  --nx-surface-active: rgba(255, 255, 255, 0.1);
-  --nx-surface-selected: rgba(97, 175, 239, 0.15);
+  --nx-surface-active: rgba(255, 255, 255, 0.09);
+  --nx-surface-selected: rgba(82, 156, 202, 0.12);
 
-  /* Glass effect */
-  --nx-glass-bg: rgba(33, 37, 43, 0.85);
-  --nx-glass-border: rgba(255, 255, 255, 0.1);
-  --nx-glass-blur: 20px;
-  --nx-glass-saturate: 150%;
+  /* No glass in Notion dark either */
+  --nx-glass-bg: #202020;
+  --nx-glass-border: rgba(255, 255, 255, 0.07);
+  --nx-glass-blur: 0px;
+  --nx-glass-saturate: 100%;
 
   /* Shadows */
-  --nx-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
-  --nx-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.35), 0 2px 4px rgba(0, 0, 0, 0.2);
-  --nx-shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.4), 0 4px 8px rgba(0, 0, 0, 0.25);
-  --nx-shadow-glow: 0 0 20px var(--nx-accent-glow);
-  --nx-shadow-inner: inset 0 1px 0 rgba(255, 255, 255, 0.05);
-  --nx-shadow-chromatic: 0 8px 24px -8px rgba(97, 175, 239, 0.2);
+  --nx-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --nx-shadow-md: rgba(0, 0, 0, 0.3) 0px 0px 0px 1px, rgba(0, 0, 0, 0.4) 0px 3px 6px, rgba(0, 0, 0, 0.5) 0px 9px 24px;
+  --nx-shadow-lg: rgba(0, 0, 0, 0.3) 0px 0px 0px 1px, rgba(0, 0, 0, 0.4) 0px 3px 6px, rgba(0, 0, 0, 0.5) 0px 9px 24px;
+  --nx-shadow-inner: none;
 
-  /* Terminal - One Dark */
-  --nx-terminal-bg: #282c34;
-  --nx-terminal-fg: #abb2bf;
-  --nx-terminal-cursor: #528bff;
-  --nx-terminal-selection: rgba(82, 139, 255, 0.3);
+  /* Terminal */
+  --nx-terminal-bg: #191919;
+  --nx-terminal-fg: #e3e3e3;
+  --nx-terminal-cursor: #529cca;
+  --nx-terminal-selection: rgba(82, 156, 202, 0.25);
 
-  /* Layout */
-  --nx-radius-sm: 6px;
-  --nx-radius-md: 10px;
-  --nx-radius-lg: 14px;
-  --nx-radius-xl: 20px;
+  /* Layout — Notion-style compact radius */
+  --nx-radius-sm: 3px;
+  --nx-radius-md: 4px;
+  --nx-radius-lg: 6px;
+  --nx-radius-xl: 8px;
 
-  --nx-sidebar-w: 260px;
-  --nx-header-h: 38px;
+  --nx-sidebar-w: 240px;
+  --nx-header-h: 36px;
   --nx-statusbar-h: 28px;
   --nx-gap: 2px;
 
@@ -129,52 +127,62 @@
    ═══════════════════════════════════════════════════════════════════════════ */
 
 [data-theme="light"] {
-  /* Core palette - clean white with subtle warmth */
-  --nx-ink: #fafafa;
-  --nx-ink-raised: #f0f0f0;
-  --nx-ink-elevated: #e5e5e5;
+  /* Notion-style palette — warm white + cream sidebar */
+  --nx-ink: #ffffff;
+  --nx-ink-raised: #f7f7f5;
+  --nx-ink-elevated: #f0efec;
   --nx-ink-float: #ffffff;
 
-  /* Accent: Deep blue for better contrast */
-  --nx-accent: #4078f2;
-  --nx-accent-dim: #3267d6;
-  --nx-accent-glow: rgba(64, 120, 242, 0.15);
-  --nx-accent-subtle: rgba(64, 120, 242, 0.08);
+  /* Accent: Notion blue */
+  --nx-accent: #2eaadc;
+  --nx-accent-dim: #0b6e99;
+  --nx-accent-glow: rgba(46, 170, 220, 0.18);
+  --nx-accent-subtle: rgba(46, 170, 220, 0.1);
 
-  /* Semantic - One Light colors */
-  --nx-success: #50a14f;
-  --nx-warning: #c18401;
-  --nx-error: #e45649;
-  --nx-info: #4078f2;
+  /* Semantic */
+  --nx-success: #0f7b6c;
+  --nx-warning: #cb912f;
+  --nx-error: #eb5757;
+  --nx-info: #2eaadc;
 
-  /* Text hierarchy - high contrast */
-  --nx-text-primary: #383a42;
-  --nx-text-secondary: #696c77;
-  --nx-text-tertiary: #a0a1a7;
-  --nx-text-ghost: #c8c8c8;
+  /* Text hierarchy — Notion dark gray scale */
+  --nx-text-primary: #37352f;
+  --nx-text-secondary: #6b6b6b;
+  --nx-text-tertiary: #9b9b9b;
+  --nx-text-ghost: #c7c7c7;
 
-  /* Borders */
-  --nx-border: rgba(0, 0, 0, 0.12);
-  --nx-border-subtle: rgba(0, 0, 0, 0.06);
-  --nx-border-strong: rgba(0, 0, 0, 0.2);
+  /* Borders — paper-thin Notion style */
+  --nx-border: rgba(55, 53, 47, 0.09);
+  --nx-border-subtle: rgba(55, 53, 47, 0.06);
+  --nx-border-strong: rgba(55, 53, 47, 0.18);
 
   /* Surfaces */
-  --nx-surface: rgba(255, 255, 255, 0.95);
-  --nx-surface-hover: rgba(0, 0, 0, 0.04);
-  --nx-surface-active: rgba(0, 0, 0, 0.08);
-  --nx-surface-selected: rgba(64, 120, 242, 0.12);
+  --nx-surface: rgba(255, 255, 255, 1);
+  --nx-surface-hover: rgba(55, 53, 47, 0.05);
+  --nx-surface-active: rgba(55, 53, 47, 0.09);
+  --nx-surface-selected: rgba(46, 170, 220, 0.1);
 
-  /* Glass - lighter for light mode */
-  --nx-glass-bg: rgba(250, 250, 250, 0.9);
-  --nx-glass-border: rgba(0, 0, 0, 0.08);
+  /* No glass in Notion */
+  --nx-glass-bg: #ffffff;
+  --nx-glass-border: rgba(55, 53, 47, 0.09);
+  --nx-glass-blur: 0px;
+  --nx-glass-saturate: 100%;
 
-  /* Shadows - softer for light mode */
-  --nx-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
-  --nx-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08), 0 1px 3px rgba(0, 0, 0, 0.05);
-  --nx-shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.1), 0 2px 8px rgba(0, 0, 0, 0.06);
-  --nx-shadow-inner: inset 0 1px 0 rgba(255, 255, 255, 0.8);
+  /* Shadows — barely-there Notion shadows */
+  --nx-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --nx-shadow-md: rgba(15, 15, 15, 0.05) 0px 0px 0px 1px, rgba(15, 15, 15, 0.1) 0px 3px 6px, rgba(15, 15, 15, 0.2) 0px 9px 24px;
+  --nx-shadow-lg: rgba(15, 15, 15, 0.05) 0px 0px 0px 1px, rgba(15, 15, 15, 0.1) 0px 3px 6px, rgba(15, 15, 15, 0.2) 0px 9px 24px;
+  --nx-shadow-inner: none;
 
-  /* Terminal - One Light */
-  --nx-terminal-bg: #fafafa;
-  --nx-terminal-fg: #383a42;
+  /* Terminal */
+  --nx-terminal-bg: #ffffff;
+  --nx-terminal-fg: #37352f;
+  --nx-terminal-cursor: #2eaadc;
+  --nx-terminal-selection: rgba(46, 170, 220, 0.25);
+
+  /* Smaller border radius — Notion is more square */
+  --nx-radius-sm: 3px;
+  --nx-radius-md: 4px;
+  --nx-radius-lg: 6px;
+  --nx-radius-xl: 8px;
 }
