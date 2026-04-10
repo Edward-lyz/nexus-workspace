@@ -1,7 +1,7 @@
 /* ═══════════════════════════════════════════════════════════════════════════
    NEXUS DESIGN SYSTEM — "Terminal Noir"
-   Phosphor amber on deep ink. The feel of a professional CRT workstation
-   refined into a modern interface.
+   Inspired by Linear's ultra-minimal precision + CRT terminal aesthetics.
+   Phosphor amber on deep ink. The feel of a professional workstation.
    ═══════════════════════════════════════════════════════════════════════════ */
 
 @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500&family=Instrument+Serif:ital@0;1&family=IBM+Plex+Sans:wght@400;500;600&display=swap');
@@ -45,18 +45,18 @@
   --nx-tracking-tight:  -0.03em;
   --nx-tracking-normal: 0;
   --nx-tracking-wide:   0.05em;
-  --nx-tracking-caps:   0.12em;
+  --nx-tracking-caps:   0.10em;
 
   /* ─────────────────────────────────────────────────────────────────────────
      DARK THEME — "Terminal Noir"
-     Phosphor amber on deep obsidian. Almost black, but warm.
+     Phosphor amber on deep obsidian. Pure dark, warm amber accent.
      ───────────────────────────────────────────────────────────────────────── */
 
-  /* Core surface palette — deep, slightly warm */
-  --nx-ink:          #080c08;
-  --nx-ink-raised:   #0d120d;
-  --nx-ink-elevated: #121812;
-  --nx-ink-float:    #181f18;
+  /* Core surface palette — near-black, neutral */
+  --nx-ink:          #0a0a0a;
+  --nx-ink-raised:   #0f0f0f;
+  --nx-ink-elevated: #141414;
+  --nx-ink-float:    #1a1a1a;
 
   /* Accent: phosphor amber — warm, analog, authoritative */
   --nx-accent:       #d4921a;
@@ -78,7 +78,7 @@
   --nx-text-primary:   #d4cbb8;
   --nx-text-secondary: #8a8278;
   --nx-text-tertiary:  #5a554e;
-  --nx-text-ghost:     #363330;
+  --nx-text-ghost:     #353530;
 
   /* Borders — very subtle, warm tint */
   --nx-border:        rgba(212, 146, 26, 0.10);
@@ -87,13 +87,13 @@
   --nx-border-focus:  var(--nx-accent);
 
   /* Surfaces */
-  --nx-surface:          #0d120d;
+  --nx-surface:          #0f0f0f;
   --nx-surface-hover:    rgba(212, 146, 26, 0.04);
   --nx-surface-active:   rgba(212, 146, 26, 0.08);
   --nx-surface-selected: rgba(212, 146, 26, 0.12);
 
   /* Glass (subtle depth — not frosted, just layered) */
-  --nx-glass-bg:       #0d120d;
+  --nx-glass-bg:       #0f0f0f;
   --nx-glass-border:   rgba(212, 146, 26, 0.10);
   --nx-glass-blur:     0px;
   --nx-glass-saturate: 100%;
@@ -108,7 +108,7 @@
   --nx-shadow-glow: 0 0 20px rgba(212, 146, 26, 0.12), 0 0 40px rgba(212, 146, 26, 0.06);
 
   /* Terminal */
-  --nx-terminal-bg:        #080c08;
+  --nx-terminal-bg:        #0a0a0a;
   --nx-terminal-fg:        #c8bf9e;
   --nx-terminal-cursor:    #d4921a;
   --nx-terminal-selection: rgba(212, 146, 26, 0.25);
@@ -119,10 +119,10 @@
   --nx-radius-lg: 8px;
   --nx-radius-xl: 10px;
 
-  --nx-sidebar-w:    244px;
+  --nx-sidebar-w:    240px;
   --nx-header-h:     34px;
-  --nx-statusbar-h:  26px;
-  --nx-gap:          2px;
+  --nx-statusbar-h:  24px;
+  --nx-gap:          3px;
 
   /* Transitions */
   --nx-transition-fast: 100ms ease-out;
