@@ -1,10 +1,10 @@
-import { fireEvent, render, screen } from '@testing-library/preact';
+import { render, screen } from '@testing-library/preact';
 import { describe, expect, it, vi } from 'vitest';
 import { StatusBar } from './StatusBar';
 import * as store from '../store';
 
 describe('StatusBar', () => {
-  it('renders scheduler summary buttons and forwards click handlers', async () => {
+  it('renders scheduler summary', async () => {
     vi.spyOn(store.ipc, 'call').mockImplementation(async (method: string, params?: Record<string, unknown>) => {
       if (method === 'node.create') return { id: params?.id ?? 'pane-pending' };
       throw new Error(`Unexpected method: ${method}`);
@@ -44,19 +44,11 @@ describe('StatusBar', () => {
       }],
     ]);
 
-    const onOpenSettings = vi.fn();
-    const onOpenHistory = vi.fn();
-    render(<StatusBar onOpenSettings={onOpenSettings} onOpenHistory={onOpenHistory} />);
+    render(<StatusBar />);
 
     expect(screen.getByText('1 task · 2 sessions')).toBeTruthy();
     expect(screen.getByText('1 queued')).toBeTruthy();
     expect(screen.getByText('2 running')).toBeTruthy();
     expect(screen.getByText('auto on')).toBeTruthy();
-
-    await fireEvent.click(screen.getByText('History'));
-    await fireEvent.click(screen.getByText('Settings'));
-
-    expect(onOpenHistory).toHaveBeenCalledTimes(1);
-    expect(onOpenSettings).toHaveBeenCalledTimes(1);
   });
 });

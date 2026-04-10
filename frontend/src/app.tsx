@@ -195,10 +195,12 @@ export function App() {
           onAddAgent={(s) => { setDialogSpace(s); setDialog('agent'); }}
           onAddTask={(s) => { setDialogSpace(s); setDialog('task'); }}
           onAddNote={(s) => { setDialogSpace(s); setDialog('note'); }}
+          onOpenSettings={() => setDialog('settings')}
+          onOpenHistory={() => setDialog('history')}
         />
         <TilingGrid />
       </div>
-      <StatusBar onOpenSettings={() => setDialog('settings')} onOpenHistory={() => setDialog('history')} />
+      <StatusBar />
       <PopoutContainer />
       <ExpandedPane />
       {dialog === 'agent' && dialogSpace && <AgentDialog space={dialogSpace} onClose={closeDialog} />}

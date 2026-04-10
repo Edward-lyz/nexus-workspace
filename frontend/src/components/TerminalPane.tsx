@@ -174,8 +174,14 @@ export function TerminalPane({ pane }: Props) {
   }, [pane.sessionId]);
 
   useEffect(() => {
+    // Only steal focus when transitioning to focused state, not on every re-render
+    // while already focused. This prevents agent output updates from re-triggering focus.
     if (isFocused && termRef.current) {
-      termRef.current.focus();
+      const activeEl = document.activeElement;
+      const termEl = bodyRef.current;
+      if (termEl && !termEl.contains(activeEl)) {
+        termRef.current.focus();
+      }
     }
   }, [isFocused]);
 

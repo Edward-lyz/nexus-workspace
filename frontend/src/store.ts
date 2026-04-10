@@ -1936,6 +1936,28 @@ export function getLinkedPane(paneId: string): PaneState | undefined {
   return panes.value.find(p => p.id === pane.linkedPaneId);
 }
 
+export async function deleteSpace(spaceId: string): Promise<void> {
+  // Remove all panes belonging to this space
+  const spacePanes = panes.value.filter(p => p.spaceId === spaceId);
+  for (const pane of spacePanes) {
+    await deletePaneInternal(pane.id, 'direct');
+  }
+  spaces.value = spaces.value.filter(s => s.id !== spaceId);
+  if (activeSpaceId.value === spaceId) {
+    activeSpaceId.value = spaces.value[0]?.id ?? null;
+  }
+  await ipc.call('space.delete', { id: spaceId }).catch((err) => {
+    console.error('space.delete failed:', err);
+  });
+}
+
+export async function renameSpace(spaceId: string, name: string): Promise<void> {
+  spaces.value = spaces.value.map(s => s.id === spaceId ? { ...s, name } : s);
+  await ipc.call('space.rename', { id: spaceId, name }).catch((err) => {
+    console.error('space.rename failed:', err);
+  });
+}
+
 // -- Bidirectional Task ↔ Agent Lookups --
 
 export function getAssignedAgent(taskId: string): AgentPoolEntry | null {
@@ -2079,9 +2101,17 @@ export async function hydrateState(): Promise<void> {
         }
 
         // Also restore legacy nodes (for backward compatibility)
+        const orphanNodeIds: string[] = [];
         for (const node of sp.nodes ?? []) {
           // Skip if already added as task
           if (restoredPanes.some(p => p.id === node.id)) continue;
+
+          // Shell/agent nodes are ephemeral — sessions don't survive restart.
+          // Delete them from the backend so they don't keep reappearing.
+          if (node.kind === 'shell' || node.kind === 'agent') {
+            orphanNodeIds.push(node.id);
+            continue;
+          }
 
           const pane: PaneState = {
             id: node.id,
@@ -2111,6 +2141,11 @@ export async function hydrateState(): Promise<void> {
 
           restoredPanes.push(pane);
         }
+
+        // Clean up orphaned shell/agent nodes from DB in the background
+        for (const nid of orphanNodeIds) {
+          ipc.call('node.delete', { id: nid }).catch(() => {});
+        }
       }
 
       if (restoredSpaces.length > 0) {
@@ -2123,47 +2158,9 @@ export async function hydrateState(): Promise<void> {
         // Use workspace path for spawning, or default
         const cwd = ws.path || undefined;
 
-        // Re-spawn PTY sessions for shells and restore agent sessions
-        for (const pane of restoredPanes) {
-          if (pane.kind === 'shell') {
-            try {
-              const resp = await ipc.call<{ session_id: string }>('pty.spawn', {
-                cwd,
-                kind: 'shell',
-                space_id: pane.spaceId,
-                node_id: pane.id,
-              });
-              updatePane(pane.id, {
-                sessionId: resp.session_id,
-                sessionStatus: 'running',
-              });
-            } catch (err) {
-              console.warn('Failed to respawn PTY for', pane.id, err);
-            }
-          }
-          // Restore agent sessions linked to tasks
-          if (pane.kind === 'task' && pane.linkedPaneId) {
-            const linkedPane = restoredPanes.find(p => p.id === pane.linkedPaneId);
-            if (linkedPane?.kind === 'agent' && linkedPane.prompt) {
-              try {
-                const resp = await ipc.call<{ session_id: string }>('pty.spawn', {
-                  cwd,
-                  kind: 'agent',
-                  agent_name: linkedPane.agentName ?? 'claude',
-                  prompt: linkedPane.prompt,
-                  space_id: linkedPane.spaceId,
-                  node_id: linkedPane.id,
-                });
-                updatePane(linkedPane.id, {
-                  sessionId: resp.session_id,
-                  sessionStatus: 'running',
-                });
-              } catch (err) {
-                console.warn('Failed to respawn agent for', linkedPane.id, err);
-              }
-            }
-          }
-        }
+        // Do NOT auto-respawn shells or standalone agents on restart.
+        // Shells are ephemeral; users re-open them manually.
+        // (Task-linked agents are handled by the scheduler separately.)
         return;
       }
     }

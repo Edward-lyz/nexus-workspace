@@ -7,10 +7,18 @@ function renderSidebar() {
   const onAddTask = vi.fn();
   const onAddAgent = vi.fn();
   const onAddNote = vi.fn();
+  const onOpenSettings = vi.fn();
+  const onOpenHistory = vi.fn();
 
-  render(<Sidebar onAddTask={onAddTask} onAddAgent={onAddAgent} onAddNote={onAddNote} />);
+  render(<Sidebar
+    onAddTask={onAddTask}
+    onAddAgent={onAddAgent}
+    onAddNote={onAddNote}
+    onOpenSettings={onOpenSettings}
+    onOpenHistory={onOpenHistory}
+  />);
 
-  return { onAddTask, onAddAgent, onAddNote };
+  return { onAddTask, onAddAgent, onAddNote, onOpenSettings, onOpenHistory };
 }
 
 describe('Sidebar', () => {
@@ -21,6 +29,7 @@ describe('Sidebar', () => {
 
     const { onAddTask, onAddAgent, onAddNote } = renderSidebar();
 
+    // Space is auto-expanded; buttons appear inside space-children
     await fireEvent.click(screen.getByText('+ Task'));
     await fireEvent.click(screen.getByText('+ Agent'));
     await fireEvent.click(screen.getByText('+ Note'));
@@ -76,7 +85,13 @@ describe('Sidebar', () => {
 
     const importWorkspace = vi.spyOn(store, 'importWorkspace').mockResolvedValue();
 
-    const { container } = render(<Sidebar onAddTask={vi.fn()} onAddAgent={vi.fn()} onAddNote={vi.fn()} />);
+    const { container } = render(<Sidebar
+      onAddTask={vi.fn()}
+      onAddAgent={vi.fn()}
+      onAddNote={vi.fn()}
+      onOpenSettings={vi.fn()}
+      onOpenHistory={vi.fn()}
+    />);
 
     const input = container.querySelector('input[type="file"]') as HTMLInputElement;
     const file = new File(['sqlite'], 'workspace.nexus.db', { type: 'application/x-sqlite3' });

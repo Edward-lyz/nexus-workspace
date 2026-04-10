@@ -324,6 +324,10 @@ pub const Db = struct {
         try self.execBind("DELETE FROM spaces WHERE id = ?1", .{id});
     }
 
+    pub fn renameSpace(self: *Db, id: []const u8, name: []const u8) !void {
+        try self.execBind("UPDATE spaces SET name = ?2 WHERE id = ?1", .{ id, name });
+    }
+
     // -- Node CRUD --
 
     pub fn createNode(self: *Db, id: []const u8, space_id: []const u8, kind: []const u8, title: []const u8) !void {

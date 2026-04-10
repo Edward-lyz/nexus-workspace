@@ -15,7 +15,7 @@ html, body {
   overflow: hidden;
   background: var(--nx-ink);
   color: var(--nx-text-primary);
-  font-family: var(--nx-font-sans);
+  font-family: var(--nx-font-mono);
   font-size: var(--nx-text-base);
   line-height: var(--nx-leading-normal);
   -webkit-font-smoothing: antialiased;
@@ -72,11 +72,12 @@ html, body {
 }
 
 .tiling-grid.empty::after {
-  content: 'Press ⌘T for new task · ⌘K for agent';
+  content: '⌘T  new task  ·  ⌘K  agent  ·  ⌘J  note';
   font-family: var(--nx-font-mono);
   font-size: var(--nx-text-sm);
   color: var(--nx-text-ghost);
   letter-spacing: var(--nx-tracking-wide);
+  opacity: 0.6;
 }
 
 /* Custom scrollbar */
@@ -188,13 +189,23 @@ html, body {
 }
 
 .pane-badge.agent {
-  background: rgba(203, 166, 247, 0.15);
-  color: #cba6f7;
+  background: rgba(212, 146, 26, 0.14);
+  color: #c8961a;
+}
+
+[data-theme="light"] .pane-badge.agent {
+  background: rgba(139, 94, 10, 0.12);
+  color: #7a4c08;
 }
 
 .pane-badge.shell {
-  background: rgba(74, 222, 128, 0.15);
-  color: #4ade80;
+  background: rgba(22, 163, 74, 0.15);
+  color: #16a34a;
+}
+
+[data-theme="light"] .pane-badge.shell {
+  background: rgba(22, 163, 74, 0.12);
+  color: #15803d;
 }
 
 .pane-badge.task {
@@ -396,7 +407,7 @@ html, body {
 }
 
 .task-line {
-  font-family: var(--nx-font-sans);
+  font-family: var(--nx-font-mono);
   font-size: var(--nx-text-base);
   font-weight: 600;
   color: var(--nx-text-primary);
@@ -424,7 +435,7 @@ html, body {
 .status-toggle:hover {
   opacity: 1;
   background: currentColor;
-  color: var(--nx-ink) !important;
+  color: white !important;
 }
 
 /* Task agent bar */
@@ -511,20 +522,18 @@ html, body {
 .task-context-btn {
   padding: var(--nx-space-1) var(--nx-space-3);
   border-radius: var(--nx-radius-sm);
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--nx-border);
+  background: var(--nx-surface-hover);
   color: var(--nx-text-tertiary);
   font-family: var(--nx-font-mono);
   font-size: var(--nx-text-xs);
   cursor: pointer;
   transition: all var(--nx-transition-fast);
-  backdrop-filter: blur(14px) saturate(150%);
-  -webkit-backdrop-filter: blur(14px) saturate(150%);
 }
 
 .task-context-btn:hover {
-  background: rgba(255, 255, 255, 0.07);
-  border-color: rgba(255, 255, 255, 0.12);
+  background: var(--nx-surface-active);
+  border-color: var(--nx-border-strong);
   color: var(--nx-text-secondary);
 }
 
@@ -578,7 +587,7 @@ html, body {
   flex-direction: column;
   padding: var(--nx-space-3) var(--nx-space-3);
   gap: var(--nx-space-3);
-  overflow-y: auto;
+  overflow: hidden;
   user-select: none;
   -webkit-user-select: none;
 }
@@ -598,11 +607,12 @@ html, body {
 }
 
 .sidebar-logo {
-  font-family: var(--nx-font-sans);
-  font-size: var(--nx-text-md);
-  font-weight: 700;
-  color: var(--nx-text-primary);
-  letter-spacing: var(--nx-tracking-tight);
+  font-family: var(--nx-font-serif);
+  font-style: italic;
+  font-size: var(--nx-text-lg);
+  font-weight: 400;
+  color: var(--nx-accent);
+  letter-spacing: -0.01em;
 }
 
 /* Workspace working directory */
@@ -693,11 +703,11 @@ html, body {
 }
 
 .sidebar-section-title {
-  font-family: var(--nx-font-sans);
-  font-size: 11px;
+  font-family: var(--nx-font-mono);
+  font-size: 10px;
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.10em;
   color: var(--nx-text-ghost);
 }
 
@@ -753,7 +763,7 @@ html, body {
 }
 
 .sidebar-item-label {
-  font-family: var(--nx-font-sans);
+  font-family: var(--nx-font-mono);
   font-size: var(--nx-text-sm);
   font-weight: 500;
   color: var(--nx-text-secondary);
@@ -779,13 +789,121 @@ html, body {
   display: flex;
   flex-direction: column;
   gap: var(--nx-space-4);
-  flex: 1;
 }
 
 .space-actions {
   display: flex;
   flex-direction: column;
   gap: 1px;
+}
+
+/* Space tree node */
+.space-tree-node {
+  display: flex;
+  flex-direction: column;
+}
+
+.space-item {
+  padding: var(--nx-space-1) var(--nx-space-2);
+  gap: var(--nx-space-1);
+}
+
+.space-chevron {
+  font-size: 12px;
+  color: var(--nx-text-tertiary);
+  width: 14px;
+  flex-shrink: 0;
+  line-height: 1;
+  transition: color var(--nx-transition-fast);
+}
+
+.space-item:hover .space-chevron,
+.space-item.active .space-chevron {
+  color: var(--nx-accent);
+}
+
+.space-children {
+  padding-left: var(--nx-space-4);
+  border-left: 1px solid var(--nx-border-subtle);
+  margin-left: var(--nx-space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--nx-space-1);
+  padding-top: var(--nx-space-1);
+  padding-bottom: var(--nx-space-1);
+}
+
+/* Add buttons row inside space */
+.space-add-row {
+  display: flex;
+  gap: 4px;
+  margin-bottom: var(--nx-space-2);
+}
+
+.space-add-btn {
+  flex: 1;
+  padding: 5px var(--nx-space-2);
+  border-radius: var(--nx-radius-sm);
+  border: 1px solid var(--nx-border);
+  background: var(--nx-surface-hover);
+  color: var(--nx-text-tertiary);
+  font-family: var(--nx-font-mono);
+  font-size: var(--nx-text-xs);
+  font-weight: 500;
+  cursor: pointer;
+  transition: background var(--nx-transition-fast), border-color var(--nx-transition-fast), color var(--nx-transition-fast);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.space-add-btn:hover {
+  background: var(--nx-surface-active);
+  color: var(--nx-text-primary);
+  border-color: var(--nx-border-strong);
+}
+
+.space-add-btn.task:hover  { color: var(--nx-accent);         border-color: var(--nx-accent); }
+
+.space-add-btn.agent:hover {
+  color: #c8961a;
+  border-color: #c8961a;
+}
+
+[data-theme="light"] .space-add-btn.agent:hover {
+  color: #7a4c08;
+}
+
+.space-add-btn.note:hover { color: var(--nx-phosphor-green); border-color: var(--nx-phosphor-green); }
+
+/* Child group (Tasks / Sessions / Notes) */
+.space-child-group {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin-top: var(--nx-space-1);
+}
+
+.space-child-label {
+  font-family: var(--nx-font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--nx-text-ghost);
+  padding: 2px 0;
+}
+
+/* task-link-status */
+.task-link-status {
+  font-family: var(--nx-font-mono);
+  font-size: 10px;
+  color: var(--nx-warning);
+  margin-left: auto;
+}
+
+/* Archived session row */
+.session-item.archived {
+  opacity: 0.6;
 }
 
 .sidebar-btn {
@@ -799,7 +917,68 @@ html, body {
   font-weight: 500;
   cursor: pointer;
   transition: background var(--nx-transition-fast);
-  text-align: center;
+  text-align: left;
+}
+
+/* Space rename input */
+.space-rename-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--nx-accent);
+  color: var(--nx-text-primary);
+  font-family: var(--nx-font-sans);
+  font-size: var(--nx-text-sm);
+  font-weight: 500;
+  outline: none;
+  padding: 0 2px;
+  min-width: 0;
+}
+
+/* Space context menu */
+.space-ctx-menu {
+  z-index: 9999;
+  background: var(--nx-ink-elevated);
+  border: 1px solid var(--nx-border-strong);
+  border-radius: var(--nx-radius-md);
+  box-shadow: var(--nx-shadow-md);
+  padding: var(--nx-space-1);
+  min-width: 120px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.space-ctx-item {
+  padding: var(--nx-space-2) var(--nx-space-3);
+  border-radius: var(--nx-radius-sm);
+  border: none;
+  background: transparent;
+  color: var(--nx-text-secondary);
+  font-family: var(--nx-font-sans);
+  font-size: var(--nx-text-sm);
+  cursor: pointer;
+  text-align: left;
+  transition: background var(--nx-transition-fast);
+}
+
+.space-ctx-item:hover {
+  background: var(--nx-surface-hover);
+  color: var(--nx-text-primary);
+}
+
+.space-ctx-item.danger:hover {
+  background: rgba(235, 87, 87, 0.12);
+  color: var(--nx-error);
+}
+
+.space-ctx-item:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.space-ctx-item:disabled:hover {
+  background: transparent;
+  color: var(--nx-text-secondary);
 }
 
 .sidebar-btn:hover {
@@ -812,7 +991,11 @@ html, body {
 }
 
 .sidebar-btn.agent:hover {
-  color: #9333ea;
+  color: #c8961a;
+}
+
+[data-theme="light"] .sidebar-btn.agent:hover {
+  color: #7a4c08;
 }
 
 .sidebar-btn.note:hover {
@@ -892,13 +1075,23 @@ html, body {
 }
 
 .sidebar-badge.agent {
-  background: rgba(203, 166, 247, 0.15);
-  color: #cba6f7;
+  background: rgba(212, 146, 26, 0.15);
+  color: #c8961a;
+}
+
+[data-theme="light"] .sidebar-badge.agent {
+  background: rgba(139, 94, 10, 0.12);
+  color: #7a4c08;
 }
 
 .sidebar-badge.shell {
-  background: rgba(74, 222, 128, 0.15);
-  color: #4ade80;
+  background: rgba(22, 163, 74, 0.15);
+  color: #16a34a;
+}
+
+[data-theme="light"] .sidebar-badge.shell {
+  background: rgba(22, 163, 74, 0.12);
+  color: #15803d;
 }
 
 /* Sidebar group */
@@ -982,6 +1175,50 @@ html, body {
 .sidebar-note-editor:focus {
   border-color: var(--nx-accent);
 }
+/* Sidebar scroll area and footer */
+.sidebar-scroll {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--nx-space-3);
+  min-height: 0;
+}
+
+.sidebar-footer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--nx-space-1);
+  padding-top: var(--nx-space-3);
+  border-top: 1px solid var(--nx-border-subtle);
+  flex-shrink: 0;
+}
+
+.sidebar-footer-btn {
+  display: flex;
+  align-items: center;
+  gap: var(--nx-space-2);
+  padding: var(--nx-space-2) var(--nx-space-3);
+  border-radius: var(--nx-radius-sm);
+  border: none;
+  background: transparent;
+  color: var(--nx-text-secondary);
+  font-family: var(--nx-font-sans);
+  font-size: var(--nx-text-sm);
+  cursor: pointer;
+  transition: all var(--nx-transition-fast);
+  width: 100%;
+  text-align: left;
+}
+
+.sidebar-footer-btn:hover {
+  background: var(--nx-surface-hover);
+  color: var(--nx-text-primary);
+}
+
+.sidebar-footer-btn.settings:hover {
+  color: var(--nx-accent);
+}
 
 /* ═══════════════════════════════════════════════════════════════════════════
    STATUS BAR — Bottom info strip
@@ -1024,15 +1261,15 @@ html, body {
 }
 
 .statusbar-badge.queued {
-  background: rgba(251, 191, 36, 0.1);
+  background: rgba(212, 146, 26, 0.10);
   color: var(--nx-warning);
-  border: 1px solid rgba(251, 191, 36, 0.2);
+  border: 1px solid rgba(212, 146, 26, 0.20);
 }
 
 .statusbar-badge.running {
-  background: rgba(74, 222, 128, 0.1);
+  background: rgba(77, 186, 110, 0.10);
   color: var(--nx-success);
-  border: 1px solid rgba(74, 222, 128, 0.2);
+  border: 1px solid rgba(77, 186, 110, 0.22);
 }
 
 .statusbar-pulse {
@@ -1065,8 +1302,8 @@ html, body {
   align-items: center;
   gap: 4px;
   padding: 2px 8px;
-  background: rgba(255, 255, 255, 0.02);
-  border: 1px solid rgba(255, 255, 255, 0.04);
+  background: var(--nx-surface-hover);
+  border: 1px solid var(--nx-border-subtle);
   border-radius: var(--nx-radius-sm);
   color: var(--nx-text-tertiary);
   font-family: var(--nx-font-mono);
@@ -1129,7 +1366,7 @@ html, body {
   border: none;
   background: transparent;
   color: var(--nx-text-primary);
-  font-family: var(--nx-font-sans);
+  font-family: var(--nx-font-mono);
   font-size: var(--nx-text-sm);
   cursor: pointer;
   text-align: left;
@@ -1138,6 +1375,7 @@ html, body {
 
 .context-menu-item:hover {
   background: var(--nx-surface-hover);
+  color: var(--nx-accent);
 }
 
 .context-menu-item--danger:hover {
@@ -1205,12 +1443,13 @@ html, body {
 }
 
 .dialog-header {
-  font-family: var(--nx-font-sans);
-  font-size: var(--nx-text-lg);
-  font-weight: 600;
+  font-family: var(--nx-font-serif);
+  font-style: italic;
+  font-size: var(--nx-text-xl);
+  font-weight: 400;
   color: var(--nx-text-primary);
   margin-bottom: var(--nx-space-5);
-  letter-spacing: var(--nx-tracking-tight);
+  letter-spacing: -0.01em;
 }
 
 .dialog-label {
@@ -1376,7 +1615,7 @@ html, body {
 
 .dialog-submit {
   background: var(--nx-accent);
-  color: var(--nx-ink);
+  color: #ffffff;
   border-color: var(--nx-accent);
 }
 
@@ -1647,7 +1886,7 @@ html, body {
   font-size: 9px;
   padding: 2px 6px;
   background: var(--nx-accent);
-  color: var(--nx-ink);
+  color: white;
   border-radius: var(--nx-radius-sm);
   font-weight: 600;
 }
@@ -1917,8 +2156,8 @@ html, body {
   width: 24px;
   height: 24px;
   border-radius: var(--nx-radius-sm);
-  border: 1px solid rgba(255, 255, 255, 0.05);
-  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--nx-border);
+  background: var(--nx-surface-hover);
   color: var(--nx-text-tertiary);
   font-size: var(--nx-text-sm);
   cursor: pointer;
@@ -2218,7 +2457,7 @@ html, body {
 .plan-btn.approve {
   background: var(--nx-success);
   border-color: var(--nx-success);
-  color: var(--nx-ink);
+  color: white;
 }
 
 .plan-btn.approve:hover {
@@ -3088,7 +3327,7 @@ html, body {
 
 .subtask-btn-add:hover {
   background: var(--nx-accent);
-  color: var(--nx-ink);
+  color: white;
 }
 
 .subtask-btn-cancel {
@@ -3158,7 +3397,7 @@ html, body {
 
 .task-dispatch-btn.primary:hover {
   background: var(--nx-accent);
-  color: var(--nx-ink);
+  color: white;
 }
 
 .best-of-n-panel {
@@ -3317,9 +3556,6 @@ html, body {
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5);
 }
 
-[data-theme="light"] .dialog-submit {
-  color: white;
-}
 
 [data-theme="light"] .pane-badge {
   background: rgba(0, 0, 0, 0.06);
@@ -3357,4 +3593,52 @@ html, body {
 
 [data-theme="light"] .clone-chip {
   border-color: rgba(0, 0, 0, 0.12);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   SIDEBAR FOOTER — Settings & History buttons pinned to bottom
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.sidebar-scroll {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--nx-space-3);
+  min-height: 0;
+}
+
+.sidebar-footer {
+  padding-top: var(--nx-space-3);
+  border-top: 1px solid var(--nx-border-subtle);
+  display: flex;
+  flex-direction: column;
+  gap: var(--nx-space-1);
+}
+
+.sidebar-footer-btn {
+  display: flex;
+  align-items: center;
+  gap: var(--nx-space-2);
+  width: 100%;
+  padding: var(--nx-space-2) var(--nx-space-3);
+  background: transparent;
+  border: none;
+  border-radius: var(--nx-radius-sm);
+  color: var(--nx-text-secondary);
+  font-family: var(--nx-font-sans);
+  font-size: var(--nx-text-sm);
+  cursor: pointer;
+  transition: all var(--nx-transition-fast);
+  text-align: left;
+}
+
+.sidebar-footer-btn:hover {
+  background: var(--nx-surface-hover);
+  color: var(--nx-text-primary);
+}
+
+.sidebar-footer-btn.settings:hover {
+  background: var(--nx-accent-subtle);
+  color: var(--nx-accent);
 }

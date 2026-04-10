@@ -228,6 +228,8 @@ pub const Server = struct {
             self.rpcSpaceCreate(params, id, client);
         } else if (std.mem.eql(u8, method, "space.delete")) {
             self.rpcSpaceDelete(params, id, client);
+        } else if (std.mem.eql(u8, method, "space.rename")) {
+            self.rpcSpaceRename(params, id, client);
         } else if (std.mem.eql(u8, method, "space.list")) {
             self.rpcSpaceList(params, id, client);
         }
@@ -483,6 +485,16 @@ pub const Server = struct {
     fn rpcSpaceDelete(self: *Server, params: std.json.ObjectMap, id: ?std.json.Value, client: *Client) void {
         const space_id = getStr(params, "id") orelse return;
         self.db.deleteSpace(space_id) catch |err| {
+            sendError(client, id, -32000, @errorName(err));
+            return;
+        };
+        sendResult(client, id, "true");
+    }
+
+    fn rpcSpaceRename(self: *Server, params: std.json.ObjectMap, id: ?std.json.Value, client: *Client) void {
+        const space_id = getStr(params, "id") orelse return;
+        const name = getStr(params, "name") orelse return;
+        self.db.renameSpace(space_id, name) catch |err| {
             sendError(client, id, -32000, @errorName(err));
             return;
         };
