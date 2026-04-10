@@ -71,13 +71,57 @@ html, body {
   background: var(--nx-ink);
 }
 
-.tiling-grid.empty::after {
-  content: '⌘T  new task  ·  ⌘K  agent  ·  ⌘J  note';
+/* Empty state — rendered by TilingGrid when no panes exist */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--nx-space-4);
+  color: var(--nx-text-ghost);
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.empty-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--nx-radius-lg);
+  border: 1px solid var(--nx-border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--nx-text-xl);
+  color: var(--nx-text-ghost);
   font-family: var(--nx-font-mono);
+  font-weight: 300;
+  opacity: 0.5;
+}
+
+.empty-state > div:not(.empty-icon):not(.empty-hint) {
+  font-family: var(--nx-font-sans);
   font-size: var(--nx-text-sm);
+  color: var(--nx-text-tertiary);
+}
+
+.empty-hint {
+  display: flex;
+  align-items: center;
+  gap: var(--nx-space-3);
+  font-family: var(--nx-font-mono);
+  font-size: var(--nx-text-xs);
   color: var(--nx-text-ghost);
   letter-spacing: var(--nx-tracking-wide);
-  opacity: 0.6;
+  opacity: 0.8;
+}
+
+.empty-hint kbd {
+  padding: 2px 6px;
+  border-radius: var(--nx-radius-sm);
+  border: 1px solid var(--nx-border);
+  background: var(--nx-surface-hover);
+  font-family: var(--nx-font-mono);
+  font-size: 10px;
+  color: var(--nx-text-secondary);
 }
 
 /* Custom scrollbar */
@@ -1186,10 +1230,10 @@ html, body {
 }
 
 .sidebar-footer {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
   gap: var(--nx-space-1);
-  padding-top: var(--nx-space-3);
+  padding-top: var(--nx-space-2);
   border-top: 1px solid var(--nx-border-subtle);
   flex-shrink: 0;
 }
@@ -1202,13 +1246,14 @@ html, body {
   border-radius: var(--nx-radius-sm);
   border: none;
   background: transparent;
-  color: var(--nx-text-secondary);
-  font-family: var(--nx-font-sans);
-  font-size: var(--nx-text-sm);
+  color: var(--nx-text-tertiary);
+  font-family: var(--nx-font-mono);
+  font-size: var(--nx-text-xs);
   cursor: pointer;
   transition: all var(--nx-transition-fast);
   width: 100%;
   text-align: left;
+  white-space: nowrap;
 }
 
 .sidebar-footer-btn:hover {
