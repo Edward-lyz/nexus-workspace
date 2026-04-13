@@ -84,6 +84,8 @@ xattr -cr /Applications/Nexus.app
 
 **Requirements:** Zig 0.15+, Node.js 20+
 
+Release app bundles should rewrite the Mach-O minimum macOS version to 12.0 before signing. The GitHub release workflow already does this with `xcrun vtool`.
+
 ```bash
 # Build frontend
 cd frontend && npm install && npm run build && cd ..
@@ -118,6 +120,14 @@ zig build -Doptimize=ReleaseFast
 mkdir -p Nexus.app/Contents/{MacOS,Resources}
 cp zig-out/bin/nexus Nexus.app/Contents/MacOS/nexus
 cp -r frontend/dist/* Nexus.app/Contents/Resources/static/
+
+# Lower the app bundle minimum macOS version to 12.0
+CURRENT_SDK="$(xcrun --sdk macosx --show-sdk-version)"
+xcrun vtool -set-build-version macos 12.0 "$CURRENT_SDK" \
+  -replace \
+  -output Nexus.app/Contents/MacOS/nexus.patched \
+  Nexus.app/Contents/MacOS/nexus
+mv Nexus.app/Contents/MacOS/nexus.patched Nexus.app/Contents/MacOS/nexus
 
 # Sign for local use
 xattr -cr Nexus.app && codesign --force --deep --sign - Nexus.app
@@ -248,6 +258,8 @@ xattr -cr /Applications/Nexus.app
 
 **依赖：** Zig 0.15+, Node.js 20+
 
+发布版 app bundle 在签名前需要把 Mach-O 的最低 macOS 版本改成 12.0。GitHub release workflow 已经用 `xcrun vtool` 做了这一步。
+
 ```bash
 # 构建前端
 cd frontend && npm install && npm run build && cd ..
@@ -282,6 +294,14 @@ zig build -Doptimize=ReleaseFast
 mkdir -p Nexus.app/Contents/{MacOS,Resources}
 cp zig-out/bin/nexus Nexus.app/Contents/MacOS/nexus
 cp -r frontend/dist/* Nexus.app/Contents/Resources/static/
+
+# 把 app bundle 的最低 macOS 版本降到 12.0
+CURRENT_SDK="$(xcrun --sdk macosx --show-sdk-version)"
+xcrun vtool -set-build-version macos 12.0 "$CURRENT_SDK" \
+  -replace \
+  -output Nexus.app/Contents/MacOS/nexus.patched \
+  Nexus.app/Contents/MacOS/nexus
+mv Nexus.app/Contents/MacOS/nexus.patched Nexus.app/Contents/MacOS/nexus
 
 # 本地签名
 xattr -cr Nexus.app && codesign --force --deep --sign - Nexus.app

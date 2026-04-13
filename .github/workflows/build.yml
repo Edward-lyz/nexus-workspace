@@ -1,5 +1,8 @@
 name: Build macOS App
 
+env:
+  MACOS_MIN_VERSION: '12.0'
+
 on:
   push:
     branches: [main]
@@ -57,6 +60,13 @@ jobs:
           cp zig-out/bin/nexus Nexus.app/Contents/MacOS/nexus
           cp -r frontend/dist/* Nexus.app/Contents/Resources/static/
 
+          CURRENT_SDK="$(xcrun --sdk macosx --show-sdk-version)"
+          xcrun vtool -set-build-version macos "${{ env.MACOS_MIN_VERSION }}" "$CURRENT_SDK" \
+            -replace \
+            -output Nexus.app/Contents/MacOS/nexus.patched \
+            Nexus.app/Contents/MacOS/nexus
+          mv Nexus.app/Contents/MacOS/nexus.patched Nexus.app/Contents/MacOS/nexus
+
           cat > Nexus.app/Contents/Info.plist << 'EOF'
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -81,7 +91,7 @@ jobs:
               <key>CFBundleVersion</key>
               <string>${{ github.run_number }}</string>
               <key>LSMinimumSystemVersion</key>
-              <string>12.0</string>
+              <string>${{ env.MACOS_MIN_VERSION }}</string>
               <key>NSHighResolutionCapable</key>
               <true/>
               <key>NSSupportsAutomaticGraphicsSwitching</key>
@@ -93,6 +103,14 @@ jobs:
           </dict>
           </plist>
           EOF
+
+      - name: Verify binary minimum macOS version
+        run: |
+          ACTUAL_MINOS="$(otool -l Nexus.app/Contents/MacOS/nexus | awk '/LC_BUILD_VERSION/{flag=1; next} flag&&/minos/{print $2; exit}')"
+          if [ "$ACTUAL_MINOS" != "${{ env.MACOS_MIN_VERSION }}" ]; then
+            echo "Expected minos ${{ env.MACOS_MIN_VERSION }}, got $ACTUAL_MINOS"
+            exit 1
+          fi
 
       - name: Generate App Icon
         run: |
