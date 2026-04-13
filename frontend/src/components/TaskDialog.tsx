@@ -8,15 +8,24 @@ interface Props {
 export function TaskDialog({ onClose }: Props) {
   const titleRef = useRef<HTMLInputElement>(null);
   const [priority, setPriority] = useState<'low' | 'medium' | 'high'>('medium');
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => { titleRef.current?.focus(); }, []);
 
   const submit = async () => {
     const prompt = titleRef.current?.value.trim();
-    if (!prompt) return;
+    if (!prompt || submitting) return;
 
-    // Use prompt directly as both title and description
-    await createTask(prompt, prompt, priority);
+    setSubmitting(true);
+    setError(null);
+    const task = await createTask(prompt, prompt, priority);
+    setSubmitting(false);
+
+    if (!task) {
+      setError('Failed to create task. Please try again.');
+      return;
+    }
     onClose();
   };
 
@@ -29,7 +38,7 @@ export function TaskDialog({ onClose }: Props) {
           ref={titleRef}
           class="dialog-input"
           placeholder="e.g., Fix login bug, Add dark mode..."
-          onKeyDown={(e) => { if (e.key === 'Enter') void submit(); }}
+          onKeyDown={(e) => { if (e.key === 'Enter' && !submitting) void submit(); }}
         />
         <label class="dialog-label">Priority</label>
         <div class="dialog-agents">
@@ -42,9 +51,12 @@ export function TaskDialog({ onClose }: Props) {
             </label>
           ))}
         </div>
+        {error && <div class="dialog-error">{error}</div>}
         <div class="dialog-actions">
-          <button class="dialog-cancel" onClick={onClose}>Cancel</button>
-          <button class="dialog-submit" onClick={() => void submit()}>Create</button>
+          <button class="dialog-cancel" onClick={onClose} disabled={submitting}>Cancel</button>
+          <button class="dialog-submit" onClick={() => void submit()} disabled={submitting}>
+            {submitting ? 'Creating...' : 'Create'}
+          </button>
         </div>
         <div class="dialog-hint">Task will auto-dispatch when an agent is available</div>
       </div>

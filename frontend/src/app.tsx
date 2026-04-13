@@ -19,6 +19,7 @@ import {
   popoutPane,
   planModeAlert, expandPane, loadPopoutPositions, currentWorkspaceId, loadSchedulerSettings,
   loadWorkspaceUiState, markSessionActivity,
+  autoCheckUpdates, checkForUpdates,
 } from './store';
 import type { SpaceState } from './store';
 
@@ -96,6 +97,11 @@ export function App() {
       await loadWorkspaceUiState();
       // Restore popout positions from last session
       loadPopoutPositions();
+
+      // Auto-check for updates in background (non-blocking)
+      if (autoCheckUpdates.value) {
+        void checkForUpdates();
+      }
     })();
   }, []);
 

@@ -1,34 +1,33 @@
 /* ═══════════════════════════════════════════════════════════════════════════
-   NEXUS DESIGN SYSTEM — "Terminal Noir"
-   Inspired by Linear's ultra-minimal precision + CRT terminal aesthetics.
-   Phosphor amber on deep ink. The feel of a professional workstation.
+   NEXUS DESIGN SYSTEM — "Noir Studio"
+   Zinc-dark surfaces. Precision geometry. No CRT nostalgia.
+   The feel of a high-performance professional tool.
    ═══════════════════════════════════════════════════════════════════════════ */
 
-@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500&family=Instrument+Serif:ital@0;1&family=IBM+Plex+Sans:wght@400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap');
 
 :root {
   /* ─────────────────────────────────────────────────────────────────────────
      SCALE & RHYTHM
      ───────────────────────────────────────────────────────────────────────── */
   --nx-scale: 1;
-  --nx-space-unit: 4px;
-  --nx-space-1: calc(var(--nx-space-unit) * 1);  /* 4px */
-  --nx-space-2: calc(var(--nx-space-unit) * 2);  /* 8px */
-  --nx-space-3: calc(var(--nx-space-unit) * 3);  /* 12px */
-  --nx-space-4: calc(var(--nx-space-unit) * 4);  /* 16px */
-  --nx-space-5: calc(var(--nx-space-unit) * 5);  /* 20px */
-  --nx-space-6: calc(var(--nx-space-unit) * 6);  /* 24px */
-  --nx-space-8: calc(var(--nx-space-unit) * 8);  /* 32px */
+  --nx-space-unit: 6px;
+  --nx-space-1: calc(var(--nx-space-unit) * 1);  /* 6px */
+  --nx-space-2: calc(var(--nx-space-unit) * 2);  /* 12px */
+  --nx-space-3: calc(var(--nx-space-unit) * 3);  /* 18px */
+  --nx-space-4: calc(var(--nx-space-unit) * 4);  /* 24px */
+  --nx-space-5: calc(var(--nx-space-unit) * 5);  /* 30px */
+  --nx-space-6: calc(var(--nx-space-unit) * 6);  /* 36px */
+  --nx-space-8: calc(var(--nx-space-unit) * 8);  /* 48px */
 
   /* ─────────────────────────────────────────────────────────────────────────
      TYPOGRAPHY
-     IBM Plex Mono: the monospace workhorse — dense, legible, technical
-     Instrument Serif: editorial contrast for logo / headers
-     IBM Plex Sans: readable prose
+     Inter: high-legibility UI sans — optimized for screens, not print
+     Geist Mono: engineering-grade monospace with clean geometry
      ───────────────────────────────────────────────────────────────────────── */
-  --nx-font-mono: 'IBM Plex Mono', 'SF Mono', 'Cascadia Code', 'Fira Code', monospace;
-  --nx-font-sans: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
-  --nx-font-serif: 'Instrument Serif', 'Georgia', serif;
+  --nx-font-mono: 'Geist Mono', 'JetBrains Mono', 'SF Mono', monospace;
+  --nx-font-sans: 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  --nx-font-serif: 'Georgia', serif;
 
   --nx-text-xs:   calc(11px * var(--nx-scale));
   --nx-text-sm:   calc(12px * var(--nx-scale));
@@ -48,70 +47,70 @@
   --nx-tracking-caps:   0.10em;
 
   /* ─────────────────────────────────────────────────────────────────────────
-     DARK THEME — "Terminal Noir"
-     Phosphor amber on deep obsidian. Pure dark, warm amber accent.
+     DARK THEME — "Noir Studio"
+     Deep Zinc surfaces. Electric gold accent. Low cognitive load.
      ───────────────────────────────────────────────────────────────────────── */
 
-  /* Core surface palette — near-black, neutral */
-  --nx-ink:          #0a0a0a;
-  --nx-ink-raised:   #0f0f0f;
-  --nx-ink-elevated: #141414;
-  --nx-ink-float:    #1a1a1a;
+  /* Core surface palette — Zinc scale */
+  --nx-ink:          #09090b;
+  --nx-ink-raised:   #121217;
+  --nx-ink-elevated: #1a1a21;
+  --nx-ink-float:    #212128;
 
-  /* Accent: phosphor amber — warm, analog, authoritative */
-  --nx-accent:       #d4921a;
-  --nx-accent-dim:   #a87015;
-  --nx-accent-glow:  rgba(212, 146, 26, 0.22);
-  --nx-accent-subtle: rgba(212, 146, 26, 0.10);
+  /* Accent: electric gold — precise, not warm */
+  --nx-accent:       #f59e0b;
+  --nx-accent-dim:   #d97706;
+  --nx-accent-glow:  rgba(245, 158, 11, 0.18);
+  --nx-accent-subtle: rgba(245, 158, 11, 0.08);
 
-  /* Secondary accent: phosphor green for "running" state */
-  --nx-phosphor-green: #4dba6e;
-  --nx-phosphor-green-glow: rgba(77, 186, 110, 0.2);
+  /* Secondary accent: emerald for "running" state */
+  --nx-phosphor-green: #34d399;
+  --nx-phosphor-green-glow: rgba(52, 211, 153, 0.18);
 
   /* Semantic */
-  --nx-success: #4dba6e;
-  --nx-warning: #d4921a;
-  --nx-error:   #c0392b;
-  --nx-info:    #5b9bd5;
+  --nx-success: #34d399;
+  --nx-warning: #f59e0b;
+  --nx-error:   #f87171;
+  --nx-info:    #60a5fa;
 
-  /* Text hierarchy */
-  --nx-text-primary:   #d4cbb8;
-  --nx-text-secondary: #8a8278;
-  --nx-text-tertiary:  #5a554e;
-  --nx-text-ghost:     #353530;
+  /* Text hierarchy — cool Zinc neutrals */
+  --nx-text-primary:   #fafafa;
+  --nx-text-secondary: #a1a1aa;
+  --nx-text-tertiary:  #52525b;
+  --nx-text-ghost:     #27272a;
 
-  /* Borders — very subtle, warm tint */
-  --nx-border:        rgba(212, 146, 26, 0.10);
-  --nx-border-subtle: rgba(212, 146, 26, 0.06);
-  --nx-border-strong: rgba(212, 146, 26, 0.20);
+  /* Borders — neutral, no amber tint */
+  --nx-border:        rgba(255, 255, 255, 0.08);
+  --nx-border-subtle: rgba(255, 255, 255, 0.05);
+  --nx-border-strong: rgba(255, 255, 255, 0.14);
   --nx-border-focus:  var(--nx-accent);
 
   /* Surfaces */
-  --nx-surface:          #0f0f0f;
-  --nx-surface-hover:    rgba(212, 146, 26, 0.04);
-  --nx-surface-active:   rgba(212, 146, 26, 0.08);
-  --nx-surface-selected: rgba(212, 146, 26, 0.12);
+  --nx-surface:          #121217;
+  --nx-surface-hover:    rgba(255, 255, 255, 0.04);
+  --nx-surface-active:   rgba(255, 255, 255, 0.07);
+  --nx-surface-selected: rgba(245, 158, 11, 0.10);
 
-  /* Glass (subtle depth — not frosted, just layered) */
-  --nx-glass-bg:       #0f0f0f;
-  --nx-glass-border:   rgba(212, 146, 26, 0.10);
+  /* Glass — simplified, no blur */
+  --nx-glass-bg:       #121217;
+  --nx-glass-border:   rgba(255, 255, 255, 0.08);
   --nx-glass-blur:     0px;
   --nx-glass-saturate: 100%;
 
-  /* Shadows — deep, directional */
-  --nx-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.6);
-  --nx-shadow-md: 0 0 0 1px rgba(0,0,0,0.5), 0 4px 12px rgba(0,0,0,0.6), 0 12px 32px rgba(0,0,0,0.4);
-  --nx-shadow-lg: 0 0 0 1px rgba(212,146,26,0.08), 0 4px 16px rgba(0,0,0,0.7), 0 16px 48px rgba(0,0,0,0.5);
-  --nx-shadow-inner: inset 0 1px 0 rgba(212, 146, 26, 0.04);
+  /* Shadows */
+  --nx-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.5);
+  --nx-shadow-md: 0 0 0 1px rgba(0,0,0,0.4), 0 4px 12px rgba(0,0,0,0.5), 0 12px 32px rgba(0,0,0,0.3);
+  --nx-shadow-lg: 0 0 0 1px rgba(0,0,0,0.4), 0 4px 16px rgba(0,0,0,0.6), 0 16px 48px rgba(0,0,0,0.4);
+  --nx-shadow-inner: inset 0 1px 0 rgba(255, 255, 255, 0.04);
 
-  /* Glow shadows for focused state */
-  --nx-shadow-glow: 0 0 20px rgba(212, 146, 26, 0.12), 0 0 40px rgba(212, 146, 26, 0.06);
+  /* Depth shadow for focused pane */
+  --nx-shadow-glow: 0 12px 24px -8px rgba(0, 0, 0, 0.5);
 
   /* Terminal */
-  --nx-terminal-bg:        #0a0a0a;
-  --nx-terminal-fg:        #c8bf9e;
-  --nx-terminal-cursor:    #d4921a;
-  --nx-terminal-selection: rgba(212, 146, 26, 0.25);
+  --nx-terminal-bg:        #09090b;
+  --nx-terminal-fg:        #e4e4e7;
+  --nx-terminal-cursor:    #f59e0b;
+  --nx-terminal-selection: rgba(245, 158, 11, 0.20);
 
   /* Layout */
   --nx-radius-sm: 4px;
@@ -122,7 +121,7 @@
   --nx-sidebar-w:    240px;
   --nx-header-h:     34px;
   --nx-statusbar-h:  24px;
-  --nx-gap:          3px;
+  --nx-gap:          4px;
 
   /* Transitions */
   --nx-transition-fast: 100ms ease-out;
@@ -132,59 +131,59 @@
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   LIGHT THEME — "Manuscript"
-   Aged paper tone. The feel of a well-worn technical manual.
+   LIGHT THEME — "Studio White"
+   Clean zinc-white. The feel of a precision design tool.
    ═══════════════════════════════════════════════════════════════════════════ */
 
 [data-theme="light"] {
-  --nx-ink:          #f5f0e8;
-  --nx-ink-raised:   #ede8de;
-  --nx-ink-elevated: #e4ddd2;
-  --nx-ink-float:    #f8f4ee;
+  --nx-ink:          #ffffff;
+  --nx-ink-raised:   #f4f4f5;
+  --nx-ink-elevated: #e4e4e7;
+  --nx-ink-float:    #fafafa;
 
-  /* Accent: deep amber ink — classic fountain pen */
-  --nx-accent:       #8b5e0a;
-  --nx-accent-dim:   #6b4808;
-  --nx-accent-glow:  rgba(139, 94, 10, 0.15);
-  --nx-accent-subtle: rgba(139, 94, 10, 0.08);
+  /* Accent: deep amber — visible on white, precise */
+  --nx-accent:       #b45309;
+  --nx-accent-dim:   #92400e;
+  --nx-accent-glow:  rgba(180, 83, 9, 0.12);
+  --nx-accent-subtle: rgba(180, 83, 9, 0.07);
 
-  --nx-phosphor-green: #2a7a44;
-  --nx-phosphor-green-glow: rgba(42, 122, 68, 0.15);
+  --nx-phosphor-green: #059669;
+  --nx-phosphor-green-glow: rgba(5, 150, 105, 0.12);
 
-  --nx-success: #2a7a44;
-  --nx-warning: #9a6206;
-  --nx-error:   #a0291e;
-  --nx-info:    #2d5fa0;
+  --nx-success: #059669;
+  --nx-warning: #b45309;
+  --nx-error:   #dc2626;
+  --nx-info:    #2563eb;
 
-  --nx-text-primary:   #2a2218;
-  --nx-text-secondary: #6b5f4e;
-  --nx-text-tertiary:  #9a8f7e;
-  --nx-text-ghost:     #c0b8a8;
+  --nx-text-primary:   #09090b;
+  --nx-text-secondary: #52525b;
+  --nx-text-tertiary:  #a1a1aa;
+  --nx-text-ghost:     #d4d4d8;
 
-  --nx-border:        rgba(139, 94, 10, 0.12);
-  --nx-border-subtle: rgba(139, 94, 10, 0.07);
-  --nx-border-strong: rgba(139, 94, 10, 0.22);
+  --nx-border:        rgba(0, 0, 0, 0.08);
+  --nx-border-subtle: rgba(0, 0, 0, 0.05);
+  --nx-border-strong: rgba(0, 0, 0, 0.14);
 
-  --nx-surface:          #f5f0e8;
-  --nx-surface-hover:    rgba(139, 94, 10, 0.05);
-  --nx-surface-active:   rgba(139, 94, 10, 0.09);
-  --nx-surface-selected: rgba(139, 94, 10, 0.12);
+  --nx-surface:          #ffffff;
+  --nx-surface-hover:    rgba(0, 0, 0, 0.03);
+  --nx-surface-active:   rgba(0, 0, 0, 0.06);
+  --nx-surface-selected: rgba(180, 83, 9, 0.08);
 
-  --nx-glass-bg:       #f5f0e8;
-  --nx-glass-border:   rgba(139, 94, 10, 0.12);
+  --nx-glass-bg:       #f4f4f5;
+  --nx-glass-border:   rgba(0, 0, 0, 0.08);
   --nx-glass-blur:     0px;
   --nx-glass-saturate: 100%;
 
-  --nx-shadow-sm: 0 1px 2px rgba(60, 40, 10, 0.08);
-  --nx-shadow-md: 0 0 0 1px rgba(60,40,10,0.08), 0 3px 8px rgba(60,40,10,0.12), 0 8px 24px rgba(60,40,10,0.08);
-  --nx-shadow-lg: 0 0 0 1px rgba(60,40,10,0.08), 0 4px 16px rgba(60,40,10,0.14), 0 16px 48px rgba(60,40,10,0.10);
-  --nx-shadow-inner: inset 0 1px 0 rgba(255, 255, 255, 0.5);
-  --nx-shadow-glow: 0 0 16px rgba(139, 94, 10, 0.10);
+  --nx-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.06);
+  --nx-shadow-md: 0 0 0 1px rgba(0,0,0,0.06), 0 3px 8px rgba(0,0,0,0.10), 0 8px 24px rgba(0,0,0,0.06);
+  --nx-shadow-lg: 0 0 0 1px rgba(0,0,0,0.06), 0 4px 16px rgba(0,0,0,0.12), 0 16px 48px rgba(0,0,0,0.08);
+  --nx-shadow-inner: inset 0 1px 0 rgba(255, 255, 255, 0.8);
+  --nx-shadow-glow: 0 12px 24px -8px rgba(0, 0, 0, 0.15);
 
-  --nx-terminal-bg:        #f0ebe1;
-  --nx-terminal-fg:        #2a2218;
-  --nx-terminal-cursor:    #8b5e0a;
-  --nx-terminal-selection: rgba(139, 94, 10, 0.20);
+  --nx-terminal-bg:        #fafafa;
+  --nx-terminal-fg:        #09090b;
+  --nx-terminal-cursor:    #b45309;
+  --nx-terminal-selection: rgba(180, 83, 9, 0.15);
 
   --nx-radius-sm: 4px;
   --nx-radius-md: 6px;

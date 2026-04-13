@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'preact/hooks';
+import { useState, useRef, useEffect, useCallback } from 'preact/hooks';
 import {
   spaces, activeSpaceId,
   panes, archivedPanes, notes, focusPane, createSpace, deletePane, unarchivePane,
@@ -17,30 +17,23 @@ interface Props {
   onOpenHistory: () => void;
 }
 
-function useSystemTheme() {
-  const getSystemTheme = () => window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-  const [theme, setTheme] = useState<'dark' | 'light'>(getSystemTheme);
-
-  useEffect(() => {
-    const mq = window.matchMedia('(prefers-color-scheme: dark)');
-    const handler = (e: MediaQueryListEvent) => {
-      const newTheme = e.matches ? 'dark' : 'light';
-      setTheme(newTheme);
-      document.documentElement.setAttribute('data-theme', newTheme);
-    };
-    document.documentElement.setAttribute('data-theme', theme);
-    mq.addEventListener('change', handler);
-    return () => mq.removeEventListener('change', handler);
-  }, []);
+function useTheme() {
+  const saved = localStorage.getItem('nx-theme') as 'dark' | 'light' | null;
+  const [theme, setTheme] = useState<'dark' | 'light'>(saved ?? 'light');
 
   const toggle = () => {
-    const newTheme = theme === 'dark' ? 'light' : 'dark';
-    setTheme(newTheme);
-    document.documentElement.setAttribute('data-theme', newTheme);
+    const next = theme === 'dark' ? 'light' : 'dark';
+    setTheme(next);
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('nx-theme', next);
   };
 
   return { theme, isDark: theme === 'dark', toggle };
 }
+
+const SIDEBAR_MIN_W = 160;
+const SIDEBAR_MAX_W = 400;
+const SIDEBAR_DEFAULT_W = 240;
 
 export function Sidebar({ onAddAgent, onAddTask, onAddNote, onOpenSettings, onOpenHistory }: Props) {
   const spacesVal = spaces.value;
@@ -48,13 +41,50 @@ export function Sidebar({ onAddAgent, onAddTask, onAddNote, onOpenSettings, onOp
   const [newSpaceName, setNewSpaceName] = useState('');
   const [addingSpace, setAddingSpace] = useState(false);
   const [expandedSpaces, setExpandedSpaces] = useState<Set<string>>(new Set([activeId ?? '']));
-  const { isDark, toggle: toggleTheme } = useSystemTheme();
+  const { isDark, toggle: toggleTheme } = useTheme();
   const [editingPath, setEditingPath] = useState(false);
   const [pathInput, setPathInput] = useState('');
   const importInputRef = useRef<HTMLInputElement>(null);
   const [renamingSpaceId, setRenamingSpaceId] = useState<string | null>(null);
   const [renameInput, setRenameInput] = useState('');
   const [spaceCtxMenu, setSpaceCtxMenu] = useState<{ spaceId: string; x: number; y: number } | null>(null);
+
+  // Resize & collapse state
+  const [sidebarWidth, setSidebarWidth] = useState(SIDEBAR_DEFAULT_W);
+  const [collapsed, setCollapsed] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
+  const dragStartX = useRef(0);
+  const dragStartWidth = useRef(SIDEBAR_DEFAULT_W);
+
+  const handleResizeMouseDown = useCallback((e: MouseEvent) => {
+    e.preventDefault();
+    dragStartX.current = e.clientX;
+    dragStartWidth.current = sidebarWidth;
+    setIsDragging(true);
+    document.body.style.userSelect = 'none';
+    document.body.style.cursor = 'col-resize';
+
+    const onMove = (ev: MouseEvent) => {
+      const delta = ev.clientX - dragStartX.current;
+      const next = Math.min(SIDEBAR_MAX_W, Math.max(SIDEBAR_MIN_W, dragStartWidth.current + delta));
+      setSidebarWidth(next);
+    };
+
+    const onUp = () => {
+      setIsDragging(false);
+      document.body.style.userSelect = '';
+      document.body.style.cursor = '';
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+    };
+
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  }, [sidebarWidth]);
+
+  const toggleCollapse = useCallback(() => {
+    setCollapsed(c => !c);
+  }, []);
 
   // Close context menu on outside click
   useEffect(() => {
@@ -166,20 +196,44 @@ export function Sidebar({ onAddAgent, onAddTask, onAddNote, onOpenSettings, onOp
   }
 
   return (
-    <div class="sidebar">
+    <div
+      class={`sidebar${collapsed ? ' collapsed' : ''}`}
+      style={{ width: collapsed ? undefined : `${sidebarWidth}px` }}
+    >
+      {/* Resize handle — drag to resize, hidden when collapsed */}
+      <div
+        class={`sidebar-resize-handle${isDragging ? ' dragging' : ''}`}
+        onMouseDown={handleResizeMouseDown}
+      />
+
+      {/* Expand button — only visible when collapsed */}
+      {collapsed && (
+        <button class="sidebar-collapse-btn" title="Expand sidebar" onClick={toggleCollapse}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="9 18 15 12 9 6" />
+          </svg>
+        </button>
+      )}
       <div class="sidebar-header">
         <span class="sidebar-logo">Nexus</span>
-        <button class="sidebar-icon-btn" title={isDark ? 'Light Mode' : 'Dark Mode'} onClick={toggleTheme}>
-          {isDark ? (
+        <div style={{ display: 'flex', gap: '2px', alignItems: 'center' }}>
+          <button class="sidebar-icon-btn" title={isDark ? 'Light Mode' : 'Dark Mode'} onClick={toggleTheme}>
+            {isDark ? (
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+              </svg>
+            ) : (
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+              </svg>
+            )}
+          </button>
+          <button class="sidebar-icon-btn" title="Collapse sidebar" onClick={toggleCollapse}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+              <polyline points="15 18 9 12 15 6" />
             </svg>
-          ) : (
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
-            </svg>
-          )}
-        </button>
+          </button>
+        </div>
       </div>
       <input type="file" ref={importInputRef} accept=".db,.sqlite,.nexus.db,application/octet-stream" style={{ display: 'none' }} onChange={handleImport} />
 

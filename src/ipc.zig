@@ -319,6 +319,10 @@ pub const Server = struct {
         } else if (std.mem.eql(u8, method, "settings.set")) {
             self.rpcSettingsSet(params, id, client);
         }
+        // App metadata
+        else if (std.mem.eql(u8, method, "app.version")) {
+            sendResult(client, id, "\"" ++ @import("build_options").app_version ++ "\"");
+        }
         // Native dialogs
         else if (std.mem.eql(u8, method, "dialog.pickFolder")) {
             self.rpcPickFolder(id, client);
@@ -639,7 +643,8 @@ pub const Server = struct {
         const requested_id = getStr(params, "id");
 
         const task_id = requested_id orelse blk: {
-            const generated = std.fmt.allocPrint(self.allocator, "task-{d}", .{std.time.timestamp()}) catch return;
+            // Use nanosecond timestamp to avoid ID collisions within the same second
+            const generated = std.fmt.allocPrint(self.allocator, "task-{d}", .{std.time.nanoTimestamp()}) catch return;
             break :blk generated;
         };
         defer if (requested_id == null) self.allocator.free(task_id);

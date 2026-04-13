@@ -13,6 +13,11 @@ import {
   importWorkspace,
   layoutMode,
   setLayoutMode,
+  autoCheckUpdates,
+  setAutoCheckUpdates,
+  checkForUpdates,
+  updateCheckResult,
+  updateChecking,
 } from '../store';
 
 interface Props {
@@ -277,6 +282,45 @@ export function SettingsDialog({ onClose }: Props) {
               <span class="shortcut-label">Popout Pane</span>
               <kbd class="shortcut-key">Cmd+E</kbd>
             </div>
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <div class="settings-section-title">Updates</div>
+          <label class="settings-row">
+            <span class="settings-label">Auto-check for updates</span>
+            <input
+              type="checkbox"
+              class="settings-checkbox"
+              checked={autoCheckUpdates.value}
+              onChange={(e) => setAutoCheckUpdates((e.target as HTMLInputElement).checked)}
+            />
+          </label>
+          <div class="settings-row" style={{ alignItems: 'flex-start', flexDirection: 'column', gap: '8px' }}>
+            <button
+              class="settings-data-btn"
+              onClick={() => void checkForUpdates()}
+              disabled={updateChecking.value}
+            >
+              {updateChecking.value ? 'Checking...' : 'Check Now'}
+            </button>
+            {updateCheckResult.value && (() => {
+              const r = updateCheckResult.value!;
+              if (r.error) return (
+                <span class="settings-update-msg error">Failed: {r.error}</span>
+              );
+              if (r.hasUpdate) return (
+                <span class="settings-update-msg has-update">
+                  v{r.latestVersion} available —{' '}
+                  <a href={r.releaseUrl} target="_blank" rel="noreferrer">Release notes</a>
+                </span>
+              );
+              return (
+                <span class="settings-update-msg up-to-date">
+                  v{r.currentVersion} — up to date
+                </span>
+              );
+            })()}
           </div>
         </div>
 

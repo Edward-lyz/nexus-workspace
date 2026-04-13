@@ -1,13 +1,13 @@
 /* ═══════════════════════════════════════════════════════════════════════════
    NEXUS — Component Styles
-   "Terminal Noir" — phosphor amber on deep ink
+   "Noir Studio" — Zinc dark. Precise geometry. No CRT nostalgia.
    ═══════════════════════════════════════════════════════════════════════════ */
 
 :root {
-  --noir-shadow-sm:  0 1px 3px rgba(0, 0, 0, 0.6);
-  --noir-shadow-md:  0 0 0 1px rgba(0,0,0,0.5), 0 4px 12px rgba(0,0,0,0.55), 0 12px 32px rgba(0,0,0,0.35);
-  --noir-shadow-lg:  0 0 0 1px rgba(212,146,26,0.08), 0 8px 24px rgba(0,0,0,0.65), 0 20px 60px rgba(0,0,0,0.45);
-  --noir-transition: 140ms ease-out;
+  --noir-shadow-sm:  0 1px 3px rgba(0, 0, 0, 0.5);
+  --noir-shadow-md:  0 0 0 1px rgba(0,0,0,0.4), 0 4px 12px rgba(0,0,0,0.5), 0 12px 32px rgba(0,0,0,0.3);
+  --noir-shadow-lg:  0 0 0 1px rgba(0,0,0,0.4), 0 8px 24px rgba(0,0,0,0.55), 0 20px 60px rgba(0,0,0,0.35);
+  --noir-transition: 150ms ease-out;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -18,33 +18,17 @@
   position: relative;
   background: var(--nx-ink-raised);
   border: 1px solid var(--nx-border);
-  border-radius: var(--nx-radius-md);
+  border-radius: var(--nx-radius-lg);
   box-shadow: var(--noir-shadow-sm);
   transition:
-    border-color var(--noir-transition),
-    box-shadow    var(--noir-transition);
+    transform      0.2s cubic-bezier(0.2, 0, 0, 1),
+    border-color   var(--noir-transition),
+    box-shadow     var(--noir-transition);
 }
 
-/* Thin top-edge highlight — like a CRT tube bezel */
+/* Top-edge highlight — disabled in Noir Studio */
 .pane::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 1px;
-  background: linear-gradient(
-    90deg,
-    transparent 0%,
-    rgba(212, 146, 26, 0.12) 30%,
-    rgba(212, 146, 26, 0.20) 50%,
-    rgba(212, 146, 26, 0.12) 70%,
-    transparent 100%
-  );
-  pointer-events: none;
-  z-index: 1;
-  opacity: 0;
-  transition: opacity var(--noir-transition);
+  display: none;
 }
 
 .pane::after {
@@ -56,25 +40,10 @@
   box-shadow: var(--noir-shadow-md);
 }
 
-.pane:hover::before {
-  opacity: 1;
-}
-
 .pane.focused {
-  border-color: rgba(212, 146, 26, 0.45);
-  box-shadow: var(--noir-shadow-md), 0 0 0 1px rgba(212, 146, 26, 0.08), var(--nx-shadow-glow);
-}
-
-.pane.focused::before {
-  opacity: 1;
-  background: linear-gradient(
-    90deg,
-    transparent 0%,
-    rgba(212, 146, 26, 0.25) 30%,
-    rgba(212, 146, 26, 0.45) 50%,
-    rgba(212, 146, 26, 0.25) 70%,
-    transparent 100%
-  );
+  border-color: var(--nx-accent);
+  box-shadow: 0 0 0 1px var(--nx-accent), var(--nx-shadow-glow);
+  transform: translateY(-1px);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -87,7 +56,6 @@
   .task-dispatch-btn,
   .task-context-btn,
   .task-agent-chip,
-  .dialog-submit,
   .dialog-cancel,
   .settings-data-btn,
   .pane-icon-btn,
@@ -112,7 +80,6 @@
   .task-dispatch-btn,
   .task-context-btn,
   .task-agent-chip,
-  .dialog-submit,
   .dialog-cancel,
   .settings-data-btn,
   .pane-icon-btn,
@@ -122,7 +89,7 @@
   .statusbar-btn,
   .cwd-preset
 ):hover {
-  background: rgba(212, 146, 26, 0.07);
+  background: rgba(255, 255, 255, 0.05);
 }
 
 :is(
@@ -131,7 +98,6 @@
   .task-dispatch-btn,
   .task-context-btn,
   .task-agent-chip,
-  .dialog-submit,
   .dialog-cancel,
   .settings-data-btn,
   .pane-icon-btn,
@@ -141,7 +107,7 @@
   .statusbar-btn,
   .cwd-preset
 ):active {
-  background: rgba(212, 146, 26, 0.12);
+  background: rgba(255, 255, 255, 0.09);
 }
 
 :is(
@@ -150,7 +116,6 @@
   .task-dispatch-btn,
   .task-context-btn,
   .task-agent-chip,
-  .dialog-submit,
   .dialog-cancel,
   .settings-data-btn,
   .pane-icon-btn,
@@ -164,7 +129,6 @@
   .task-dispatch-btn,
   .task-context-btn,
   .task-agent-chip,
-  .dialog-submit,
   .dialog-cancel,
   .settings-data-btn,
   .pane-icon-btn,
@@ -193,7 +157,7 @@
 
 .sidebar-icon-btn:hover,
 .pane-icon-btn:hover {
-  color: var(--nx-accent);
+  color: var(--nx-text-primary);
 }
 
 /* ─────────────────────────────────────────────────────────────────────────
@@ -232,7 +196,7 @@
 }
 
 .dialog-cancel:hover {
-  background: rgba(212, 146, 26, 0.07);
+  background: rgba(255, 255, 255, 0.05);
   color: var(--nx-text-primary);
 }
 
@@ -259,7 +223,7 @@
   padding: 7px 12px;
   border-radius: var(--nx-radius-sm);
   color: var(--nx-text-secondary);
-  border: 1px dashed rgba(212, 146, 26, 0.20);
+  border: 1px dashed var(--nx-border-strong);
   background: transparent;
   font-family: var(--nx-font-mono);
 }
@@ -267,7 +231,7 @@
 .task-dispatch-btn:hover {
   border-color: var(--nx-accent);
   color: var(--nx-accent);
-  background: rgba(212, 146, 26, 0.06);
+  background: var(--nx-accent-subtle);
   border-style: solid;
 }
 
@@ -330,7 +294,7 @@
 
 .cwd-preset:hover {
   color: var(--nx-accent);
-  background: rgba(212, 146, 26, 0.08);
+  background: var(--nx-accent-subtle);
 }
 
 /* ─────────────────────────────────────────────────────────────────────────
@@ -342,8 +306,8 @@
   width: 34px;
   height: 18px;
   border-radius: 9px;
-  background: rgba(212, 146, 26, 0.12);
-  border: 1px solid rgba(212, 146, 26, 0.20);
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--nx-border-strong);
   cursor: pointer;
   transition: background 150ms ease, border-color 150ms ease;
 }
@@ -361,7 +325,7 @@
 }
 
 .liquid-toggle.active {
-  background: rgba(212, 146, 26, 0.20);
+  background: var(--nx-accent-subtle);
   border-color: var(--nx-accent);
 }
 
@@ -391,7 +355,7 @@
 }
 
 .sidebar-footer-btn:hover {
-  background: rgba(212, 146, 26, 0.07);
+  background: rgba(255, 255, 255, 0.05);
   color: var(--nx-text-primary);
 }
 
@@ -493,7 +457,7 @@
   .statusbar-btn,
   .cwd-preset
 ):hover {
-  background: rgba(139, 94, 10, 0.07);
+  background: rgba(0, 0, 0, 0.05);
 }
 
 [data-theme="light"] .dialog-submit {
@@ -502,16 +466,16 @@
 }
 
 [data-theme="light"] .task-dispatch-btn {
-  border-color: rgba(139, 94, 10, 0.20);
+  border-color: var(--nx-border-strong);
 }
 
 [data-theme="light"] .task-dispatch-btn:hover {
-  background: rgba(139, 94, 10, 0.07);
+  background: var(--nx-accent-subtle);
 }
 
 [data-theme="light"] .liquid-toggle {
-  background: rgba(139, 94, 10, 0.10);
-  border-color: rgba(139, 94, 10, 0.20);
+  background: rgba(0, 0, 0, 0.06);
+  border-color: var(--nx-border-strong);
 }
 
 [data-theme="light"] .liquid-toggle::before {
@@ -519,7 +483,7 @@
 }
 
 [data-theme="light"] .liquid-toggle.active {
-  background: rgba(139, 94, 10, 0.18);
+  background: var(--nx-accent-subtle);
   border-color: var(--nx-accent);
 }
 
@@ -534,8 +498,8 @@
 }
 
 [data-theme="light"] .pane.focused {
-  border-color: rgba(139, 94, 10, 0.50);
-  box-shadow: var(--nx-shadow-md), 0 0 14px rgba(139, 94, 10, 0.10);
+  border-color: var(--nx-accent);
+  box-shadow: 0 0 0 1px var(--nx-accent), var(--nx-shadow-glow);
 }
 
 [data-theme="light"] .sidebar {
@@ -563,7 +527,3 @@
   border-top-color: var(--nx-border-subtle);
 }
 
-/* No shimmer animation on focused pane */
-.pane.focused::before {
-  animation: none;
-}

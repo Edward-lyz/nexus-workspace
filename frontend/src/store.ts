@@ -457,6 +457,109 @@ export function setLayoutMode(mode: 'horizontal' | 'vertical') {
   saveLayoutMode();
 }
 
+// -- Update checking --
+
+const GITHUB_RELEASES_API = 'https://api.github.com/repos/Edward-lyz/Nexus/releases/latest';
+const GITHUB_TAGS_API = 'https://api.github.com/repos/Edward-lyz/Nexus/tags';
+
+export interface UpdateCheckResult {
+  hasUpdate: boolean;
+  currentVersion: string;
+  latestVersion: string;
+  releaseUrl: string;
+  error?: string;
+}
+
+export const autoCheckUpdates = signal<boolean>(true);
+export const updateCheckResult = signal<UpdateCheckResult | null>(null);
+export const updateChecking = signal<boolean>(false);
+
+function compareVersions(a: string, b: string): number {
+  const pa = a.replace(/^v/, '').split('.').map(Number);
+  const pb = b.replace(/^v/, '').split('.').map(Number);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const diff = (pb[i] ?? 0) - (pa[i] ?? 0);
+    if (diff !== 0) return diff;
+  }
+  return 0;
+}
+
+export async function checkForUpdates(): Promise<UpdateCheckResult> {
+  updateChecking.value = true;
+  const controller = new AbortController();
+  const fetchTimeout = setTimeout(() => controller.abort(), 10_000);
+
+  try {
+    let currentVersion = '0.1.0';
+    try {
+      currentVersion = await ipc.call<string>('app.version');
+    } catch {}
+
+    const resp = await fetch(GITHUB_RELEASES_API, {
+      headers: { Accept: 'application/vnd.github+json' },
+      signal: controller.signal,
+    });
+
+    let tagName: string;
+    let releaseUrl: string;
+
+    if (resp.ok) {
+      const release = await resp.json() as { tag_name: string; html_url: string };
+      tagName = release.tag_name;
+      releaseUrl = release.html_url;
+    } else {
+      // No releases yet — fall back to tags
+      const tagsResp = await fetch(GITHUB_TAGS_API, {
+        headers: { Accept: 'application/vnd.github+json' },
+        signal: controller.signal,
+      });
+      if (!tagsResp.ok) throw new Error(`GitHub API ${tagsResp.status}`);
+      const tags = await tagsResp.json() as Array<{ name: string }>;
+      if (!tags.length) throw new Error('No releases or tags found');
+      tagName = tags[0].name;
+      releaseUrl = `https://github.com/Edward-lyz/Nexus/releases`;
+    }
+
+    const latestVersion = tagName.replace(/^v/, '');
+    const hasUpdate = compareVersions(currentVersion, latestVersion) > 0;
+
+    const result: UpdateCheckResult = {
+      hasUpdate,
+      currentVersion,
+      latestVersion,
+      releaseUrl,
+    };
+    updateCheckResult.value = result;
+    return result;
+  } catch (err) {
+    const msg = err instanceof Error
+      ? (err.name === 'AbortError' ? 'Request timed out' : err.message)
+      : String(err);
+    const result: UpdateCheckResult = {
+      hasUpdate: false,
+      currentVersion: '0.1.0',
+      latestVersion: '?',
+      releaseUrl: '',
+      error: msg,
+    };
+    updateCheckResult.value = result;
+    return result;
+  } finally {
+    clearTimeout(fetchTimeout);
+    updateChecking.value = false;
+  }
+}
+
+async function loadAutoCheckUpdates() {
+  const val = await getWorkspaceSetting<string>('autoCheckUpdates');
+  if (val !== null) autoCheckUpdates.value = val !== 'false';
+}
+
+export function setAutoCheckUpdates(enabled: boolean) {
+  autoCheckUpdates.value = enabled;
+  setWorkspaceSetting('autoCheckUpdates', String(enabled));
+}
+
 export async function loadWorkspaceUiState() {
   workspaceUiStateReady = false;
 
@@ -464,6 +567,7 @@ export async function loadWorkspaceUiState() {
     loadCustomAgents(),
     loadExecutionHistory(),
     loadLayoutMode(),
+    loadAutoCheckUpdates(),
   ]);
 
   const [savedNotes, savedArchivedPanes, savedActiveSpaceId, savedFocusedPaneId] = await Promise.all([
@@ -561,10 +665,44 @@ export function expandPane(paneId: string | null) {
 }
 
 // -- Plan mode detection and management --
-// Pattern to detect Claude Code entering plan mode (looks for plan mode indicators in terminal output)
-const PLAN_MODE_START_PATTERN = /\[Plan Mode\]|Entering plan mode|Plan:/i;
+// Claude Code outputs a distinctive header when entering plan mode.
+// We match the tightest possible pattern to avoid false positives from system prompts.
+const PLAN_MODE_START_PATTERN = /PLAN MODE|╭─+.*plan|entering plan mode/i;
 const PLAN_MODE_END_PATTERN = /\[Exit Plan Mode\]|Exiting plan mode|Plan approved/i;
-const ATTENTION_PATTERN = /requires approval|approve|approval needed|permission|confirm|allow this|plan ready/i;
+// Only match explicit Claude Code interactive prompts, not casual mentions of these words in output.
+// Claude's actual permission/approval prompts are prefixed with "[" or appear as standalone lines.
+const ATTENTION_PATTERN = /\[requires approval\]|\[approve\]|\[approval needed\]|\[permission\]|\bAllow this action\?|\bApprove\?/i;
+
+// Full ANSI/VT escape sequence stripper.
+// Covers CSI (colors, cursor, erase), OSC, DCS, private modes, and \r overwrite.
+const ANSI_STRIP_RE = /\x1b(?:[@-Z\\-_]|\[[0-9;?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|\x1b\\))/g;
+// Unicode block/progress-bar characters that terminal progress bars use
+const PROGRESS_BAR_RE = /[\u2580-\u259F\u2592\u2593\u2588]+/g;
+
+function stripAnsi(raw: string): string {
+  const noEsc = raw.replace(ANSI_STRIP_RE, '').replace(PROGRESS_BAR_RE, '');
+  // Simulate \r overwrite per line (handles within-chunk \r)
+  return noEsc
+    .split('\n')
+    .map(line => {
+      const parts = line.split('\r');
+      return parts[parts.length - 1] ?? line;
+    })
+    .join('\n');
+}
+
+// Append new content to accumulated plan text, handling cross-chunk \r overwrite.
+// A chunk starting with \r means it overwrites the last partial line in current.
+function appendPlanContent(current: string, incoming: string): string {
+  const clean = stripAnsi(incoming);
+  if (clean.startsWith('\r')) {
+    const lastNl = current.lastIndexOf('\n');
+    const base = lastNl >= 0 ? current.slice(0, lastNl + 1) : '';
+    return base + clean.slice(1);
+  }
+  return current + clean;
+}
+
 const SESSION_IDLE_MS = 5000;
 const sessionIdleTimers = new Map<string, number>();
 
@@ -656,9 +794,7 @@ export function detectPlanMode(sessionId: string, data: string) {
   // Accumulate plan content when in plan mode
   if (pane.planMode) {
     const current = pane.planContent ?? '';
-    // Strip ANSI codes for readability
-    const cleanData = data.replace(/\x1b\[[0-9;]*m/g, '');
-    updatePane(pane.id, { planContent: current + cleanData });
+    updatePane(pane.id, { planContent: appendPlanContent(current, data) });
   }
 
   // Detect plan mode end
@@ -1081,6 +1217,21 @@ function setTaskAssignmentLocal(taskId: string, agentId: string): void {
 let isSchedulerDispatchRunning = false;
 let scheduleDispatchRerunRequested = false;
 
+const TASK_START_TIMEOUT_MS = 15_000;
+
+async function startAssignedTaskWithTimeout(taskId: string, slotId: string): Promise<void> {
+  const timeout = new Promise<never>((_, reject) =>
+    setTimeout(() => reject(new Error(`startAssignedTask timeout: task=${taskId}`)), TASK_START_TIMEOUT_MS)
+  );
+  try {
+    await Promise.race([startAssignedTask(taskId, slotId), timeout]);
+  } catch (err) {
+    console.error('startAssignedTask failed or timed out:', err);
+    // requeue=false: don't re-enqueue, let user decide — avoids infinite retry loop
+    await stopTaskExecution(taskId, false).catch(() => {});
+  }
+}
+
 async function runSchedulerDispatch(spaceId = activeSpaceId.value): Promise<void> {
   if (!spaceId || !schedulerSettings.value.autoDispatch) return;
 
@@ -1099,10 +1250,13 @@ async function runSchedulerDispatch(spaceId = activeSpaceId.value): Promise<void
 
       if (!assignments.length) break;
 
-      for (const assignment of assignments) {
-        setTaskAssignmentLocal(assignment.task_id, assignment.agent_id);
-        await startAssignedTask(assignment.task_id, assignment.agent_id);
-      }
+      // Start all assigned tasks concurrently so one slow agent can't block others
+      await Promise.all(
+        assignments.map(assignment => {
+          setTaskAssignmentLocal(assignment.task_id, assignment.agent_id);
+          return startAssignedTaskWithTimeout(assignment.task_id, assignment.agent_id);
+        })
+      );
 
       if (!scheduleDispatchRerunRequested) break;
       scheduleDispatchRerunRequested = false;

@@ -29,6 +29,15 @@ pub const PtyHandle = struct {
 
     pub fn kill(self: *PtyHandle) void {
         posix.kill(self.child_pid, posix.SIG.TERM) catch {};
+        // Give the process 200ms to exit gracefully, then SIGKILL
+        var attempts: u8 = 0;
+        while (attempts < 20) : (attempts += 1) {
+            const result = posix.waitpid(self.child_pid, std.c.W.NOHANG);
+            if (result.pid != 0) break; // process exited
+            std.Thread.sleep(10 * std.time.ns_per_ms);
+        }
+        // Force-kill if still running
+        posix.kill(self.child_pid, posix.SIG.KILL) catch {};
         _ = posix.waitpid(self.child_pid, 0);
         posix.close(self.master_fd);
     }

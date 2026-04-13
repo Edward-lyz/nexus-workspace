@@ -620,8 +620,9 @@ html, body {
    ═══════════════════════════════════════════════════════════════════════════ */
 
 .sidebar {
+  /* width is driven by inline style from Sidebar.tsx; CSS var is the initial fallback */
   width: var(--nx-sidebar-w);
-  min-width: var(--nx-sidebar-w);
+  min-width: 0;
   height: 100%;
   background: var(--nx-glass-bg);
   backdrop-filter: blur(var(--nx-glass-blur)) saturate(var(--nx-glass-saturate));
@@ -634,6 +635,70 @@ html, body {
   overflow: hidden;
   user-select: none;
   -webkit-user-select: none;
+  position: relative;
+  transition: width 0.2s cubic-bezier(0.2, 0, 0, 1);
+  flex-shrink: 0;
+}
+
+/* Collapsed state — icon-only strip */
+.sidebar.collapsed {
+  width: 40px !important;
+  min-width: 40px;
+  padding: var(--nx-space-3) 0;
+}
+
+.sidebar.collapsed .sidebar-header,
+.sidebar.collapsed .sidebar-scroll,
+.sidebar.collapsed .sidebar-footer {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Collapse toggle button — lives at top of collapsed strip */
+.sidebar-collapse-btn {
+  position: absolute;
+  top: var(--nx-space-3);
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 26px;
+  color: var(--nx-text-tertiary);
+  cursor: pointer;
+  background: transparent;
+  border: none;
+  border-radius: var(--nx-radius-sm);
+  z-index: 10;
+  transition: color 0.1s ease;
+}
+
+.sidebar-collapse-btn:hover {
+  color: var(--nx-text-primary);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+/* Drag resize handle */
+.sidebar-resize-handle {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 4px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 20;
+  background: transparent;
+  transition: background 0.15s ease;
+}
+
+.sidebar-resize-handle:hover,
+.sidebar-resize-handle.dragging {
+  background: var(--nx-accent);
+  opacity: 0.5;
+}
+
+.sidebar.collapsed .sidebar-resize-handle {
+  display: none;
 }
 
 .sidebar-header {
@@ -814,6 +879,8 @@ html, body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  flex: 1;
+  text-align: left;
 }
 
 .sidebar-item.active .sidebar-item-label {
@@ -1463,7 +1530,9 @@ html, body {
 
 .dialog {
   width: 400px;
-  max-width: 90vw;
+  max-width: min(90vw, 400px);
+  max-height: 85vh;
+  overflow-y: auto;
   padding: var(--nx-space-6);
   border-radius: var(--nx-radius-lg);
   border: 1px solid var(--nx-glass-border);
@@ -1627,6 +1696,17 @@ html, body {
   font-family: var(--nx-font-mono);
   font-size: var(--nx-text-xs);
   color: var(--nx-text-tertiary);
+}
+
+.dialog-error {
+  font-size: var(--nx-text-xs);
+  color: var(--nx-error);
+  font-family: var(--nx-font-mono);
+  margin-top: var(--nx-space-2);
+  padding: var(--nx-space-2) var(--nx-space-3);
+  background: color-mix(in srgb, var(--nx-error) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--nx-error) 30%, transparent);
+  border-radius: var(--nx-radius-sm);
 }
 
 .dialog-actions {
@@ -2261,6 +2341,7 @@ html, body {
 /* Wide dialog variant */
 .dialog.dialog-wide {
   width: 520px;
+  max-width: min(90vw, 520px);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -2410,6 +2491,33 @@ html, body {
   border: 1px solid rgba(248, 113, 113, 0.3);
   color: var(--nx-error);
   font-size: var(--nx-text-xs);
+}
+
+.settings-update-msg {
+  font-size: var(--nx-text-xs);
+  font-family: var(--nx-font-mono);
+  padding: var(--nx-space-1) var(--nx-space-2);
+  border-radius: var(--nx-radius-sm);
+}
+
+.settings-update-msg.up-to-date {
+  color: var(--nx-success);
+  background: color-mix(in srgb, var(--nx-success) 10%, transparent);
+}
+
+.settings-update-msg.has-update {
+  color: var(--nx-warning);
+  background: color-mix(in srgb, var(--nx-warning) 10%, transparent);
+}
+
+.settings-update-msg.has-update a {
+  color: inherit;
+  text-decoration: underline;
+}
+
+.settings-update-msg.error {
+  color: var(--nx-error);
+  background: color-mix(in srgb, var(--nx-error) 10%, transparent);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -3524,22 +3632,9 @@ html, body {
   animation: glass-pulse 2s ease-in-out infinite;
 }
 
-@keyframes pane-shake {
-  0%, 100% { transform: translateX(0); }
-  20% { transform: translateX(-4px); }
-  40% { transform: translateX(4px); }
-  60% { transform: translateX(-3px); }
-  80% { transform: translateX(3px); }
-}
-
 /* needs-attention: only border highlight, no continuous animation */
 .pane.needs-attention {
   border-color: rgba(251, 191, 36, 0.7);
-}
-
-/* shake-once: temporary class for one-time shake animation */
-.pane.shake-once {
-  animation: pane-shake 420ms ease-in-out;
 }
 
 /* Enhanced notification banner with glass */
