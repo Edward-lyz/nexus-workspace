@@ -17,9 +17,6 @@ jobs:
       matrix:
         include:
           - os: macos-15
-            arch: x86_64
-            name: Intel
-          - os: macos-15
             arch: aarch64
             name: AppleSilicon
 
@@ -158,11 +155,6 @@ jobs:
       contents: write
 
     steps:
-      - name: Download Intel DMG
-        uses: actions/download-artifact@v4
-        with:
-          name: Nexus-DMG-x86_64
-
       - name: Download Apple Silicon DMG
         uses: actions/download-artifact@v4
         with:
@@ -175,9 +167,8 @@ jobs:
           echo "tag=$TAG" >> $GITHUB_OUTPUT
           echo "Generated tag: $TAG"
 
-      - name: Rename DMGs with nightly tag
+      - name: Rename DMG with nightly tag
         run: |
-          mv Nexus-x86_64.dmg Nexus-${{ steps.tag.outputs.tag }}-x86_64.dmg
           mv Nexus-aarch64.dmg Nexus-${{ steps.tag.outputs.tag }}-aarch64.dmg
 
       - name: Delete old nightly releases
@@ -199,7 +190,6 @@ jobs:
             **Commit**: [`${{ github.sha }}`](${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }})
             **Build**: [#${{ github.run_number }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
           files: |
-            Nexus-${{ steps.tag.outputs.tag }}-x86_64.dmg
             Nexus-${{ steps.tag.outputs.tag }}-aarch64.dmg
           draft: false
           prerelease: true
@@ -214,11 +204,6 @@ jobs:
       contents: write
 
     steps:
-      - name: Download Intel DMG
-        uses: actions/download-artifact@v4
-        with:
-          name: Nexus-DMG-x86_64
-
       - name: Download Apple Silicon DMG
         uses: actions/download-artifact@v4
         with:
@@ -228,7 +213,6 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           files: |
-            Nexus-x86_64.dmg
             Nexus-aarch64.dmg
           draft: false
           prerelease: false
