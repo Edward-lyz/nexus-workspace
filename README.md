@@ -124,7 +124,6 @@ cp -r frontend/dist/* Nexus.app/Contents/Resources/static/
 # Lower the app bundle minimum macOS version to 12.0
 CURRENT_SDK="$(xcrun --sdk macosx --show-sdk-version)"
 xcrun vtool -set-build-version macos 12.0 "$CURRENT_SDK" \
-  -replace \
   -output Nexus.app/Contents/MacOS/nexus.patched \
   Nexus.app/Contents/MacOS/nexus
 mv Nexus.app/Contents/MacOS/nexus.patched Nexus.app/Contents/MacOS/nexus
@@ -298,7 +297,6 @@ cp -r frontend/dist/* Nexus.app/Contents/Resources/static/
 # 把 app bundle 的最低 macOS 版本降到 12.0
 CURRENT_SDK="$(xcrun --sdk macosx --show-sdk-version)"
 xcrun vtool -set-build-version macos 12.0 "$CURRENT_SDK" \
-  -replace \
   -output Nexus.app/Contents/MacOS/nexus.patched \
   Nexus.app/Contents/MacOS/nexus
 mv Nexus.app/Contents/MacOS/nexus.patched Nexus.app/Contents/MacOS/nexus

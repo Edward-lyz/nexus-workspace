@@ -62,7 +62,6 @@ jobs:
 
           CURRENT_SDK="$(xcrun --sdk macosx --show-sdk-version)"
           xcrun vtool -set-build-version macos "${{ env.MACOS_MIN_VERSION }}" "$CURRENT_SDK" \
-            -replace \
             -output Nexus.app/Contents/MacOS/nexus.patched \
             Nexus.app/Contents/MacOS/nexus
           mv Nexus.app/Contents/MacOS/nexus.patched Nexus.app/Contents/MacOS/nexus
