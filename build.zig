@@ -4,26 +4,12 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    // Embed version from build.zig.zon at compile time
-    const version = b.option([]const u8, "version", "App version string") orelse "0.2.0";
-    const build_options = b.addOptions();
-    build_options.addOption([]const u8, "app_version", version);
-
-    const webview_dep = b.dependency("webview", .{
-        .target = target,
-        .optimize = optimize,
-    });
-
     const exe = b.addExecutable(.{
         .name = "nexus",
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/main.zig"),
             .target = target,
             .optimize = optimize,
-            .imports = &.{
-                .{ .name = "webview", .module = webview_dep.module("webview") },
-                .{ .name = "build_options", .module = build_options.createModule() },
-            },
         }),
     });
 

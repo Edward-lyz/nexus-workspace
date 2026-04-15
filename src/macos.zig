@@ -24,11 +24,6 @@ fn msg1(obj: ?*anyopaque, selector: c.SEL, a1: ?*anyopaque) ?*anyopaque {
     return f(obj, selector, a1);
 }
 
-fn msg3(obj: ?*anyopaque, selector: c.SEL, a1: ?*anyopaque, a2: c.SEL, a3: ?*anyopaque) ?*anyopaque {
-    const f: *const fn (?*anyopaque, c.SEL, ?*anyopaque, c.SEL, ?*anyopaque) callconv(.c) ?*anyopaque = @ptrCast(&c.objc_msgSend);
-    return f(obj, selector, a1, a2, a3);
-}
-
 fn msgBool(obj: ?*anyopaque, selector: c.SEL, val: bool) void {
     const f: *const fn (?*anyopaque, c.SEL, c_int) callconv(.c) void = @ptrCast(&c.objc_msgSend);
     f(obj, selector, if (val) 1 else 0);
@@ -49,11 +44,6 @@ fn msgIdx(obj: ?*anyopaque, selector: c.SEL, idx: u64) ?*anyopaque {
     return f(obj, selector, idx);
 }
 
-fn msgInsert(obj: ?*anyopaque, selector: c.SEL, item: ?*anyopaque, idx: i64) void {
-    const f: *const fn (?*anyopaque, c.SEL, ?*anyopaque, i64) callconv(.c) void = @ptrCast(&c.objc_msgSend);
-    f(obj, selector, item, idx);
-}
-
 fn msgStr(obj: ?*anyopaque, selector: c.SEL) ?[*:0]const u8 {
     const f: *const fn (?*anyopaque, c.SEL) callconv(.c) ?[*:0]const u8 = @ptrCast(&c.objc_msgSend);
     return f(obj, selector);
@@ -63,68 +53,6 @@ fn createNSString(str: [*:0]const u8) ?*anyopaque {
     const NSString = objc_getClass("NSString") orelse return null;
     const alloc = msg0(NSString, sel("alloc")) orelse return null;
     return msg1(alloc, sel("initWithUTF8String:"), @as(?*anyopaque, @ptrCast(@constCast(str))));
-}
-
-/// Setup standard macOS menus with keyboard shortcuts
-pub fn setupEditMenu() void {
-    const NSApplication = objc_getClass("NSApplication") orelse return;
-    const NSMenu = objc_getClass("NSMenu") orelse return;
-    const NSMenuItem = objc_getClass("NSMenuItem") orelse return;
-
-    const app = msg0(NSApplication, sel("sharedApplication")) orelse return;
-    const mainMenu = msg0(app, sel("mainMenu")) orelse return;
-
-    // Create App menu with Quit
-    const appMenuTitle = createNSString("Nexus") orelse return;
-    const appMenuAlloc = msg0(NSMenu, sel("alloc")) orelse return;
-    const appMenu = msg1(appMenuAlloc, sel("initWithTitle:"), appMenuTitle) orelse return;
-
-    // Add Quit item
-    const quitTitle = createNSString("Quit Nexus") orelse return;
-    const quitKey = createNSString("q") orelse return;
-    const quitItemAlloc = msg0(NSMenuItem, sel("alloc")) orelse return;
-    const quitItem = msg3(quitItemAlloc, sel("initWithTitle:action:keyEquivalent:"), quitTitle, sel("terminate:"), quitKey) orelse return;
-    _ = msg1(appMenu, sel("addItem:"), quitItem);
-
-    // Create App menu item for menu bar
-    const appMenuItemAlloc = msg0(NSMenuItem, sel("alloc")) orelse return;
-    const appMenuItem = msg0(appMenuItemAlloc, sel("init")) orelse return;
-    _ = msg1(appMenuItem, sel("setSubmenu:"), appMenu);
-    msgInsert(mainMenu, sel("insertItem:atIndex:"), appMenuItem, 0);
-
-    // Create Edit menu
-    const editMenuTitle = createNSString("Edit") orelse return;
-    const editMenuAlloc = msg0(NSMenu, sel("alloc")) orelse return;
-    const editMenu = msg1(editMenuAlloc, sel("initWithTitle:"), editMenuTitle) orelse return;
-
-    // Add standard edit items
-    const items = [_]struct { title: [*:0]const u8, action: [*:0]const u8, key: [*:0]const u8 }{
-        .{ .title = "Undo", .action = "undo:", .key = "z" },
-        .{ .title = "Redo", .action = "redo:", .key = "Z" },
-        .{ .title = "Cut", .action = "cut:", .key = "x" },
-        .{ .title = "Copy", .action = "copy:", .key = "c" },
-        .{ .title = "Paste", .action = "paste:", .key = "v" },
-        .{ .title = "Select All", .action = "selectAll:", .key = "a" },
-    };
-
-    for (items) |item| {
-        const title = createNSString(item.title) orelse continue;
-        const key = createNSString(item.key) orelse continue;
-        const action = sel(item.action);
-
-        const menuItemAlloc = msg0(NSMenuItem, sel("alloc")) orelse continue;
-        const menuItem = msg3(menuItemAlloc, sel("initWithTitle:action:keyEquivalent:"), title, action, key) orelse continue;
-
-        _ = msg1(editMenu, sel("addItem:"), menuItem);
-    }
-
-    // Create Edit menu item for menu bar
-    const editMenuItemAlloc = msg0(NSMenuItem, sel("alloc")) orelse return;
-    const editMenuItem = msg0(editMenuItemAlloc, sel("init")) orelse return;
-    _ = msg1(editMenuItem, sel("setSubmenu:"), editMenu);
-
-    // Add to main menu
-    _ = msg1(mainMenu, sel("addItem:"), editMenuItem);
 }
 
 // Context for folder picker callback

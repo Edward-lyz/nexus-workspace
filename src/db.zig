@@ -568,7 +568,7 @@ pub const Db = struct {
 
         // Update task
         try self.execBind(
-            "UPDATE tasks SET assigned_agent_id = ?2, queue_status = 'dispatched', dispatched_at = strftime('%s','now'), status = 'doing' WHERE id = ?1",
+            "UPDATE tasks SET assigned_agent_id = ?2, queue_status = 'dispatched', dispatched_at = strftime('%s','now'), status = 'in_progress' WHERE id = ?1",
             .{ task_id, agent_id },
         );
 
@@ -860,7 +860,7 @@ pub const Db = struct {
         for (tasks_in_space) |task| {
             if (task.assigned_agent_id) |agent_id| {
                 if (std.mem.startsWith(u8, agent_id, "slot-") and
-                    (std.mem.eql(u8, task.queue_status, "dispatched") or std.mem.eql(u8, task.status, "doing")))
+                    (std.mem.eql(u8, task.queue_status, "dispatched") or std.mem.eql(u8, task.status, "in_progress")))
                 {
                     const task_id = try allocator.dupe(u8, task.id);
                     if (stale_task_ids.get(task_id) != null) {
@@ -1349,7 +1349,7 @@ test "Db persists task queue assignment and agent linkage" {
     defer freeTaskRows(allocator, tasks_list);
     try std.testing.expectEqual(@as(usize, 1), tasks_list.len);
     try std.testing.expectEqualStrings("dispatched", tasks_list[0].queue_status);
-    try std.testing.expectEqualStrings("doing", tasks_list[0].status);
+    try std.testing.expectEqualStrings("in_progress", tasks_list[0].status);
     try std.testing.expect(tasks_list[0].queued_at != null);
     try std.testing.expect(tasks_list[0].dispatched_at != null);
     try std.testing.expectEqualStrings("slot-1", tasks_list[0].assigned_agent_id.?);

@@ -321,7 +321,7 @@ pub const Server = struct {
         }
         // App metadata
         else if (std.mem.eql(u8, method, "app.version")) {
-            sendResult(client, id, "\"" ++ @import("build_options").app_version ++ "\"");
+            sendResult(client, id, "\"0.2.0\"");
         }
         // Native dialogs
         else if (std.mem.eql(u8, method, "dialog.pickFolder")) {
@@ -666,7 +666,7 @@ pub const Server = struct {
         writeJsonString(writer, title) catch return;
         writer.writeAll(",\"description\":") catch return;
         writeJsonString(writer, description) catch return;
-        writer.writeAll(",\"status\":\"todo\",\"priority\":") catch return;
+        writer.writeAll(",\"status\":\"backlog\",\"priority\":") catch return;
         writeJsonString(writer, priority) catch return;
         writer.writeAll(",\"queue_status\":\"none\"") catch return;
         if (parent_task_id) |parent| {
@@ -683,11 +683,24 @@ pub const Server = struct {
             return;
         };
 
+        const status_value = getStr(params, "status");
+        if (status_value) |s| {
+            if (!std.mem.eql(u8, s, "backlog") and
+                !std.mem.eql(u8, s, "todo") and
+                !std.mem.eql(u8, s, "in_progress") and
+                !std.mem.eql(u8, s, "in_review") and
+                !std.mem.eql(u8, s, "done"))
+            {
+                sendError(client, id, -32602, "Invalid status: must be backlog, todo, in_progress, in_review, or done");
+                return;
+            }
+        }
+
         self.db.updateTask(
             task_id,
             getStr(params, "title"),
             getStr(params, "description"),
-            getStr(params, "status"),
+            status_value,
             getStr(params, "priority"),
             getStr(params, "queue_status"),
         ) catch |err| {

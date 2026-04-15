@@ -1,9 +1,10 @@
 const std = @import("std");
-const Webview = @import("webview").Webview;
 
 const ipc = @import("ipc.zig");
 const db_mod = @import("db.zig");
-const macos = @import("macos.zig");
+
+// Signal flag: set by SIGINT/SIGTERM handler
+var should_exit = std.atomic.Value(bool).init(false);
 
 pub fn main() !void {
     var gpa_state: std.heap.GeneralPurposeAllocator(.{}) = .{};
@@ -16,6 +17,7 @@ pub fn main() !void {
     // Resolve frontend dist directory
     const static_root = resolveFrontendDir(allocator) catch |err| {
         std.log.err("frontend dist not found: {}", .{err});
+        std.log.err("Run 'cd frontend-v2 && bun run build' first.", .{});
         return err;
     };
     defer allocator.free(static_root);
@@ -30,27 +32,68 @@ pub fn main() !void {
         server_thread.join();
     }
 
-    // Launch WebView on main thread (macOS requires main thread for UI)
-    const w = try Webview.create(true, null);
-    defer w.destroy() catch {};
-
-    // Setup macOS menus AFTER webview creates the app (Cmd+Q, Cmd+C/V/X/A/Z)
-    macos.setupEditMenu();
-
-    try w.setTitle("Nexus");
-    try w.setSize(1200, 800, .none);
-
+    // Print URL
     const url = try std.fmt.allocPrintSentinel(allocator, "http://127.0.0.1:{d}", .{server.port}, 0);
     defer allocator.free(url);
 
-    try w.navigate(url);
-    try w.run();
+    std.log.info("Nexus daemon running at {s}", .{url});
+    std.log.info("Press Ctrl+C to stop.", .{});
+
+    // Open browser
+    openBrowser(url);
+
+    // Setup signal handlers
+    setupSignalHandlers();
+
+    // Block main thread until signal arrives
+    while (!should_exit.load(.seq_cst)) {
+        std.Thread.sleep(1 * std.time.ns_per_s);
+    }
+
+    std.log.info("Shutting down...", .{});
+}
+
+fn setupSignalHandlers() void {
+    const os = std.posix;
+    const act = std.posix.Sigaction{
+        .handler = .{ .handler = handleSignal },
+        .mask = @as(std.posix.sigset_t, 0),
+        .flags = 0,
+    };
+    os.sigaction(os.SIG.INT, &act, null);
+    os.sigaction(os.SIG.TERM, &act, null);
+}
+
+fn handleSignal(_: c_int) callconv(.c) void {
+    should_exit.store(true, .seq_cst);
+}
+
+fn openBrowser(url: []const u8) void {
+    const pid = std.posix.fork() catch {
+        std.log.warn("Failed to fork for browser open. Open manually: {s}", .{url});
+        return;
+    };
+
+    if (pid == 0) {
+        // Child process: exec /usr/bin/open <url>
+        const argv = [_:null]?[*:0]const u8{ "/usr/bin/open", @ptrCast(url.ptr), null };
+        std.posix.execveZ("/usr/bin/open", &argv, @ptrCast(std.os.environ.ptr)) catch {
+            std.posix.exit(1);
+        };
+        std.posix.exit(1);
+    }
+
+    // Parent: wait for child (open returns immediately)
+    _ = std.posix.waitpid(pid, 0);
 }
 
 fn resolveFrontendDir(allocator: std.mem.Allocator) ![]u8 {
     const candidates = [_][]const u8{
+        "frontend-v2/dist",
         "frontend/dist",
+        "../frontend-v2/dist",
         "../frontend/dist",
+        "../../frontend-v2/dist",
         "../../frontend/dist",
         "../Resources/static", // macOS .app bundle
     };
