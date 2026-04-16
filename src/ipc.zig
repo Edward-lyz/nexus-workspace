@@ -260,6 +260,22 @@ pub const Server = struct {
             self.rpcTaskUnassign(params, id, client);
         } else if (std.mem.eql(u8, method, "task.resetDispatch")) {
             self.rpcTaskResetDispatch(params, id, client);
+        } else if (std.mem.eql(u8, method, "taskRun.list")) {
+            self.rpcTaskRunList(params, id, client);
+        }
+        // Comment methods
+        else if (std.mem.eql(u8, method, "comment.create")) {
+            self.rpcCommentCreate(params, id, client);
+        } else if (std.mem.eql(u8, method, "comment.list")) {
+            self.rpcCommentList(params, id, client);
+        } else if (std.mem.eql(u8, method, "comment.update")) {
+            self.rpcCommentUpdate(params, id, client);
+        } else if (std.mem.eql(u8, method, "comment.delete")) {
+            self.rpcCommentDelete(params, id, client);
+        } else if (std.mem.eql(u8, method, "task.block")) {
+            self.rpcTaskBlock(params, id, client);
+        } else if (std.mem.eql(u8, method, "task.cancel")) {
+            self.rpcTaskCancel(params, id, client);
         }
         // Agent methods
         else if (std.mem.eql(u8, method, "agent.create")) {
@@ -312,6 +328,10 @@ pub const Server = struct {
             self.rpcScrollbackSave(params, id, client);
         } else if (std.mem.eql(u8, method, "scrollback.load")) {
             self.rpcScrollbackLoad(params, id, client);
+        } else if (std.mem.eql(u8, method, "taskLiveOutput.save")) {
+            self.rpcTaskLiveOutputSave(params, id, client);
+        } else if (std.mem.eql(u8, method, "taskLiveOutput.load")) {
+            self.rpcTaskLiveOutputLoad(params, id, client);
         }
         // Settings
         else if (std.mem.eql(u8, method, "settings.get")) {
@@ -326,6 +346,36 @@ pub const Server = struct {
         // Native dialogs
         else if (std.mem.eql(u8, method, "dialog.pickFolder")) {
             self.rpcPickFolder(id, client);
+        }
+        // Project methods
+        else if (std.mem.eql(u8, method, "project.create")) {
+            self.rpcProjectCreate(params, id, client);
+        } else if (std.mem.eql(u8, method, "project.list")) {
+            self.rpcProjectList(params, id, client);
+        } else if (std.mem.eql(u8, method, "project.update")) {
+            self.rpcProjectUpdate(params, id, client);
+        } else if (std.mem.eql(u8, method, "project.delete")) {
+            self.rpcProjectDelete(params, id, client);
+        }
+        // Inbox methods
+        else if (std.mem.eql(u8, method, "inbox.list")) {
+            self.rpcInboxList(params, id, client);
+        } else if (std.mem.eql(u8, method, "inbox.markRead")) {
+            self.rpcInboxMarkRead(params, id, client);
+        } else if (std.mem.eql(u8, method, "inbox.markAllRead")) {
+            self.rpcInboxMarkAllRead(params, id, client);
+        }
+        // Autopilot methods
+        else if (std.mem.eql(u8, method, "autopilot.create")) {
+            self.rpcAutopilotCreate(params, id, client);
+        } else if (std.mem.eql(u8, method, "autopilot.list")) {
+            self.rpcAutopilotList(params, id, client);
+        } else if (std.mem.eql(u8, method, "autopilot.update")) {
+            self.rpcAutopilotUpdate(params, id, client);
+        } else if (std.mem.eql(u8, method, "autopilot.delete")) {
+            self.rpcAutopilotDelete(params, id, client);
+        } else if (std.mem.eql(u8, method, "autopilot.setEnabled")) {
+            self.rpcAutopilotSetEnabled(params, id, client);
         } else {
             sendError(client, id, -32601, "Method not found");
         }
@@ -334,13 +384,31 @@ pub const Server = struct {
     // -- PTY RPC handlers --
 
     fn rpcPtySpawn(self: *Server, params: std.json.ObjectMap, id: ?std.json.Value, client: *Client) void {
-        const cwd = getStr(params, "cwd");
+        var resolved_cwd: ?[]u8 = null;
+        defer if (resolved_cwd) |cwd| self.allocator.free(cwd);
+
+        const requested_cwd = getStr(params, "cwd");
         const command = getStr(params, "command");
         const kind_str = getStr(params, "kind") orelse "shell";
         const space_id = getStr(params, "space_id");
         const node_id = getStr(params, "node_id");
 
         const kind: session_mod.SessionKind = if (std.mem.eql(u8, kind_str, "agent")) .agent else .shell;
+        const cwd = blk: {
+            if (requested_cwd) |cwd| break :blk cwd;
+            if (space_id) |sid| {
+                const directory_path = self.db.getSpaceDirectoryPath(self.allocator, sid) catch null;
+                if (directory_path) |path| {
+                    if (path.len == 0) {
+                        self.allocator.free(path);
+                        break :blk null;
+                    }
+                    resolved_cwd = path;
+                    break :blk path;
+                }
+            }
+            break :blk null;
+        };
 
         const sess = self.sessions.spawn(kind, cwd, command, space_id, node_id) catch |err| {
             sendError(client, id, -32000, @errorName(err));
@@ -349,6 +417,9 @@ pub const Server = struct {
 
         // Link node to session in DB
         if (node_id) |nid| {
+            if (space_id) |sid| {
+                self.db.ensureNode(nid, sid, "terminal", "Terminal") catch {};
+            }
             self.db.updateNodeSession(nid, sess.id) catch {};
         }
 
@@ -378,8 +449,107 @@ pub const Server = struct {
 
     fn rpcPtyKill(self: *Server, params: std.json.ObjectMap, id: ?std.json.Value, client: *Client) void {
         const session_id = getStr(params, "session_id") orelse return;
+        const killed_agent_session = if (self.sessions.get(session_id)) |session| session.kind == .agent else false;
         self.sessions.kill(session_id);
+        self.broadcastPtyExit(session_id);
+
+        if (killed_agent_session) {
+            self.db.finishTaskRun(session_id, "cancelled") catch {};
+            self.reconcileAgentSessionExit(session_id);
+            notify.sendNotification(self.allocator, "Agent Exited", "Session ended") catch {};
+            self.broadcastNotification("Agent Exited", "Session ended");
+        }
+
         if (id != null) sendResult(client, id, "true");
+    }
+
+    fn agentCommandForProvider(provider_id: []const u8) ![]const u8 {
+        if (std.mem.eql(u8, provider_id, "claude")) return "claude";
+        if (std.mem.eql(u8, provider_id, "codex")) return "codex";
+        return error.UnsupportedAgentProvider;
+    }
+
+    fn buildAgentKickoffPrompt(self: *Server, context: db_mod.AgentLaunchContext) ![]u8 {
+        const task_identifier = context.task_identifier orelse context.task_id;
+        const task_description = if (context.task_description.len > 0) context.task_description else "No description provided.";
+        const workspace_path = if (context.space_directory_path.len > 0) context.space_directory_path else "(workspace directory not set)";
+        const agent_prompt = context.agent_prompt orelse "Keep progress visible and report blockers immediately.";
+
+        return std.fmt.allocPrint(
+            self.allocator,
+            "Agent instructions:\n{s}\n\nAssigned task {s}: {s}\nPriority: {s}\nWorkspace: {s}\n\nTask description:\n{s}\n\nStart working immediately. Keep terminal output informative so the developer can intervene when needed.\n",
+            .{
+                agent_prompt,
+                task_identifier,
+                context.task_title,
+                context.task_priority,
+                workspace_path,
+                task_description,
+            },
+        );
+    }
+
+    fn startAssignedAgentSession(self: *Server, task_id: []const u8) ![]const u8 {
+        const context = (try self.db.getAgentLaunchContext(self.allocator, task_id)) orelse return error.TaskNotAssigned;
+        defer db_mod.freeAgentLaunchContext(self.allocator, context);
+
+        const command = try agentCommandForProvider(context.provider_id);
+        const cwd = if (context.space_directory_path.len > 0) context.space_directory_path else null;
+        const kickoff_prompt = try self.buildAgentKickoffPrompt(context);
+        defer self.allocator.free(kickoff_prompt);
+
+        const session = try self.sessions.spawn(.agent, cwd, command, null, null);
+        errdefer self.sessions.kill(session.id);
+
+        try self.db.updateAgent(context.agent_id, "running", session.id, null, false, false);
+        try self.db.startTaskRun(task_id, context.agent_id, context.provider_id, context.provider_name, session.id);
+
+        _ = session.pty_handle.write(kickoff_prompt) catch {};
+        _ = session.pty_handle.write("\n") catch {};
+
+        return session.id;
+    }
+
+    fn stopTaskExecution(self: *Server, task_id: []const u8, run_status: []const u8) void {
+        const binding = self.db.getTaskExecutionBinding(self.allocator, task_id) catch return orelse return;
+        defer db_mod.freeTaskExecutionBinding(self.allocator, binding);
+
+        if (binding.session_id) |session_id| {
+            self.sessions.kill(session_id);
+            self.broadcastPtyExit(session_id);
+            self.db.finishTaskRun(session_id, run_status) catch {};
+        }
+    }
+
+    fn reconcileAgentSessionExit(self: *Server, session_id: []const u8) void {
+        self.scheduler_mutex.lock();
+        defer self.scheduler_mutex.unlock();
+
+        const binding = self.db.getSessionAgentBinding(self.allocator, session_id) catch return orelse return;
+        defer db_mod.freeSessionAgentBinding(self.allocator, binding);
+
+        self.db.finishTaskRun(session_id, "completed") catch {};
+
+        if (binding.assigned_task_id) |task_id| {
+            const task_title = self.db.getTaskTitle(self.allocator, task_id) catch null;
+            defer if (task_title) |t| self.allocator.free(t);
+
+            const inbox_id = std.fmt.allocPrint(self.allocator, "inbox-{d}", .{std.time.nanoTimestamp()}) catch null;
+            if (inbox_id) |iid| {
+                defer self.allocator.free(iid);
+                const title = task_title orelse "Task";
+                const msg = std.fmt.allocPrint(self.allocator, "Agent completed: {s}", .{title}) catch null;
+                if (msg) |m| {
+                    defer self.allocator.free(m);
+                    self.db.createInboxItem(iid, binding.space_id, "task_completed", task_id, m) catch {};
+                }
+            }
+
+            self.db.unassignTask(task_id) catch {};
+            return;
+        }
+
+        self.db.updateAgent(binding.agent_id, "idle", null, null, true, true) catch {};
     }
 
     // -- Workspace RPC --
@@ -406,7 +576,14 @@ pub const Server = struct {
         writer.writeByte('[') catch return;
         for (rows, 0..) |row, i| {
             if (i > 0) writer.writeByte(',') catch return;
-            std.fmt.format(writer, "{{\"id\":\"{s}\",\"name\":\"{s}\",\"path\":\"{s}\"}}", .{ row.id, row.name, row.path }) catch return;
+            writer.writeByte('{') catch return;
+            writer.writeAll("\"id\":") catch return;
+            writeJsonString(writer, row.id) catch return;
+            writer.writeAll(",\"name\":") catch return;
+            writeJsonString(writer, row.name) catch return;
+            writer.writeAll(",\"path\":") catch return;
+            writeJsonString(writer, row.path) catch return;
+            writer.writeByte('}') catch return;
         }
         writer.writeByte(']') catch return;
         sendResult(client, id, fbs.getWritten());
@@ -528,7 +705,14 @@ pub const Server = struct {
         writer.writeByte('[') catch return;
         for (rows, 0..) |row, i| {
             if (i > 0) writer.writeByte(',') catch return;
-            std.fmt.format(writer, "{{\"id\":\"{s}\",\"name\":\"{s}\",\"directory_path\":\"{s}\",\"sort_order\":{d}}}", .{ row.id, row.name, row.directory_path, row.sort_order }) catch return;
+            writer.writeByte('{') catch return;
+            writer.writeAll("\"id\":") catch return;
+            writeJsonString(writer, row.id) catch return;
+            writer.writeAll(",\"name\":") catch return;
+            writeJsonString(writer, row.name) catch return;
+            writer.writeAll(",\"directory_path\":") catch return;
+            writeJsonString(writer, row.directory_path) catch return;
+            std.fmt.format(writer, ",\"sort_order\":{d}}}", .{row.sort_order}) catch return;
         }
         writer.writeByte(']') catch return;
         sendResult(client, id, fbs.getWritten());
@@ -639,6 +823,15 @@ pub const Server = struct {
         const title = getStr(params, "title") orelse "";
         const description = getStr(params, "description") orelse "";
         const priority = getStr(params, "priority") orelse "medium";
+        if (!std.mem.eql(u8, priority, "urgent") and
+            !std.mem.eql(u8, priority, "high") and
+            !std.mem.eql(u8, priority, "medium") and
+            !std.mem.eql(u8, priority, "low") and
+            !std.mem.eql(u8, priority, "none"))
+        {
+            sendError(client, id, -32602, "Invalid priority: must be urgent, high, medium, low, or none");
+            return;
+        }
         const parent_task_id = getStr(params, "parent_task_id");
         const requested_id = getStr(params, "id");
 
@@ -689,9 +882,24 @@ pub const Server = struct {
                 !std.mem.eql(u8, s, "todo") and
                 !std.mem.eql(u8, s, "in_progress") and
                 !std.mem.eql(u8, s, "in_review") and
-                !std.mem.eql(u8, s, "done"))
+                !std.mem.eql(u8, s, "done") and
+                !std.mem.eql(u8, s, "blocked") and
+                !std.mem.eql(u8, s, "cancelled"))
             {
-                sendError(client, id, -32602, "Invalid status: must be backlog, todo, in_progress, in_review, or done");
+                sendError(client, id, -32602, "Invalid status: must be backlog, todo, in_progress, in_review, done, blocked, or cancelled");
+                return;
+            }
+        }
+
+        const priority_value = getStr(params, "priority");
+        if (priority_value) |p| {
+            if (!std.mem.eql(u8, p, "urgent") and
+                !std.mem.eql(u8, p, "high") and
+                !std.mem.eql(u8, p, "medium") and
+                !std.mem.eql(u8, p, "low") and
+                !std.mem.eql(u8, p, "none"))
+            {
+                sendError(client, id, -32602, "Invalid priority: must be urgent, high, medium, low, or none");
                 return;
             }
         }
@@ -701,8 +909,14 @@ pub const Server = struct {
             getStr(params, "title"),
             getStr(params, "description"),
             status_value,
-            getStr(params, "priority"),
+            priority_value,
             getStr(params, "queue_status"),
+            getStr(params, "identifier"),
+            getStr(params, "due_date"),
+            getStr(params, "labels"),
+            if (params.get("estimate")) |v| if (v == .integer) @as(?i32, @intCast(v.integer)) else null else null,
+            getStr(params, "project_id"),
+            getStr(params, "completed_by_agent_id"),
         ) catch |err| {
             sendError(client, id, -32000, @errorName(err));
             return;
@@ -713,6 +927,7 @@ pub const Server = struct {
 
     fn rpcTaskDelete(self: *Server, params: std.json.ObjectMap, id: ?std.json.Value, client: *Client) void {
         const task_id = getStr(params, "id") orelse return;
+        self.stopTaskExecution(task_id, "cancelled");
         self.db.deleteTask(task_id) catch |err| {
             sendError(client, id, -32000, @errorName(err));
             return;
@@ -743,22 +958,43 @@ pub const Server = struct {
                 self.allocator.free(row.queue_status);
                 if (row.assigned_agent_id) |a| self.allocator.free(a);
                 if (row.node_id) |n| self.allocator.free(n);
+                if (row.identifier) |v| self.allocator.free(v);
+                if (row.due_date) |v| self.allocator.free(v);
+                if (row.labels) |v| self.allocator.free(v);
+                if (row.completed_by_agent_id) |v| self.allocator.free(v);
+                if (row.project_id) |v| self.allocator.free(v);
             }
             self.allocator.free(rows);
         }
 
-        var buf: [16384]u8 = undefined;
+        var buf: [32768]u8 = undefined;
         var fbs = std.io.fixedBufferStream(&buf);
         const writer = fbs.writer();
         writer.writeByte('[') catch return;
         for (rows, 0..) |row, i| {
             if (i > 0) writer.writeByte(',') catch return;
-            std.fmt.format(writer, "{{\"id\":\"{s}\",\"space_id\":\"{s}\",\"title\":\"{s}\",\"description\":\"{s}\",\"status\":\"{s}\",\"priority\":\"{s}\",\"queue_status\":\"{s}\"", .{ row.id, row.space_id, row.title, row.description, row.status, row.priority, row.queue_status }) catch return;
+            writer.writeByte('{') catch return;
+            writer.writeAll("\"id\":") catch return;
+            writeJsonString(writer, row.id) catch return;
+            writer.writeAll(",\"space_id\":") catch return;
+            writeJsonString(writer, row.space_id) catch return;
+            writer.writeAll(",\"title\":") catch return;
+            writeJsonString(writer, row.title) catch return;
+            writer.writeAll(",\"description\":") catch return;
+            writeJsonString(writer, row.description) catch return;
+            writer.writeAll(",\"status\":") catch return;
+            writeJsonString(writer, row.status) catch return;
+            writer.writeAll(",\"priority\":") catch return;
+            writeJsonString(writer, row.priority) catch return;
+            writer.writeAll(",\"queue_status\":") catch return;
+            writeJsonString(writer, row.queue_status) catch return;
             if (row.parent_task_id) |p| {
-                std.fmt.format(writer, ",\"parent_task_id\":\"{s}\"", .{p}) catch return;
+                writer.writeAll(",\"parent_task_id\":") catch return;
+                writeJsonString(writer, p) catch return;
             }
             if (row.assigned_agent_id) |a| {
-                std.fmt.format(writer, ",\"assigned_agent_id\":\"{s}\"", .{a}) catch return;
+                writer.writeAll(",\"assigned_agent_id\":") catch return;
+                writeJsonString(writer, a) catch return;
             }
             if (row.queued_at) |q| {
                 std.fmt.format(writer, ",\"queued_at\":{d}", .{q}) catch return;
@@ -768,6 +1004,29 @@ pub const Server = struct {
             }
             if (row.completed_at) |c| {
                 std.fmt.format(writer, ",\"completed_at\":{d}", .{c}) catch return;
+            }
+            if (row.identifier) |v| {
+                writer.writeAll(",\"identifier\":") catch return;
+                writeJsonString(writer, v) catch return;
+            }
+            if (row.due_date) |v| {
+                writer.writeAll(",\"due_date\":") catch return;
+                writeJsonString(writer, v) catch return;
+            }
+            if (row.labels) |v| {
+                writer.writeAll(",\"labels\":") catch return;
+                writer.writeAll(v) catch return;
+            }
+            if (row.estimate) |v| {
+                std.fmt.format(writer, ",\"estimate\":{d}", .{v}) catch return;
+            }
+            if (row.completed_by_agent_id) |v| {
+                writer.writeAll(",\"completed_by_agent_id\":") catch return;
+                writeJsonString(writer, v) catch return;
+            }
+            if (row.project_id) |v| {
+                writer.writeAll(",\"project_id\":") catch return;
+                writeJsonString(writer, v) catch return;
             }
             std.fmt.format(writer, ",\"sort_order\":{d},\"created_at\":{d}}}", .{ row.sort_order, row.created_at }) catch return;
         }
@@ -797,22 +1056,30 @@ pub const Server = struct {
             return;
         };
 
+        self.stopTaskExecution(task_id, "cancelled");
         self.db.assignTaskToAgent(task_id, agent_id) catch |err| {
             sendError(client, id, -32000, @errorName(err));
             return;
         };
 
-        var resp_buf: [256]u8 = undefined;
-        const resp = std.fmt.bufPrint(&resp_buf, "{{\"task_id\":\"{s}\",\"agent_id\":\"{s}\"}}", .{ task_id, agent_id }) catch return;
+        const session_id = self.startAssignedAgentSession(task_id) catch |err| {
+            self.db.unassignTask(task_id) catch {};
+            sendError(client, id, -32000, @errorName(err));
+            return;
+        };
+
+        var resp_buf: [384]u8 = undefined;
+        const resp = std.fmt.bufPrint(&resp_buf, "{{\"task_id\":\"{s}\",\"agent_id\":\"{s}\",\"session_id\":\"{s}\"}}", .{ task_id, agent_id, session_id }) catch return;
         sendResult(client, id, resp);
     }
 
     fn rpcTaskUnassign(self: *Server, params: std.json.ObjectMap, id: ?std.json.Value, client: *Client) void {
-        const task_id = getStr(params, "id") orelse {
-            sendError(client, id, -32602, "Missing id");
+        const task_id = getStr(params, "task_id") orelse getStr(params, "id") orelse {
+            sendError(client, id, -32602, "Missing task_id");
             return;
         };
 
+        self.stopTaskExecution(task_id, "cancelled");
         self.db.unassignTask(task_id) catch |err| {
             sendError(client, id, -32000, @errorName(err));
             return;
@@ -827,7 +1094,180 @@ pub const Server = struct {
         };
         const requeue = if (params.get("requeue")) |value| value == .bool and value.bool else true;
 
+        self.stopTaskExecution(task_id, "cancelled");
         self.db.resetTaskDispatch(task_id, requeue) catch |err| {
+            sendError(client, id, -32000, @errorName(err));
+            return;
+        };
+        sendResult(client, id, "true");
+    }
+
+    fn rpcTaskRunList(self: *Server, params: std.json.ObjectMap, id: ?std.json.Value, client: *Client) void {
+        const task_id = getStr(params, "task_id") orelse {
+            sendError(client, id, -32602, "Missing task_id");
+            return;
+        };
+
+        const rows = self.db.listTaskRuns(self.allocator, task_id) catch {
+            sendResult(client, id, "[]");
+            return;
+        };
+        defer db_mod.freeTaskRunRows(self.allocator, rows);
+
+        var buf: std.ArrayList(u8) = .empty;
+        defer buf.deinit(self.allocator);
+        const writer = buf.writer(self.allocator);
+
+        writer.writeByte('[') catch return;
+        for (rows, 0..) |row, index| {
+            if (index > 0) writer.writeByte(',') catch return;
+            writer.writeByte('{') catch return;
+            writer.writeAll("\"id\":") catch return;
+            writeJsonString(writer, row.id) catch return;
+            writer.writeAll(",\"task_id\":") catch return;
+            writeJsonString(writer, row.task_id) catch return;
+            if (row.agent_id) |agent_id| {
+                writer.writeAll(",\"agent_id\":") catch return;
+                writeJsonString(writer, agent_id) catch return;
+            }
+            writer.writeAll(",\"provider_id\":") catch return;
+            writeJsonString(writer, row.provider_id) catch return;
+            writer.writeAll(",\"provider_name\":") catch return;
+            writeJsonString(writer, row.provider_name) catch return;
+            if (row.session_id) |session_id| {
+                writer.writeAll(",\"session_id\":") catch return;
+                writeJsonString(writer, session_id) catch return;
+            }
+            writer.writeAll(",\"status\":") catch return;
+            writeJsonString(writer, row.status) catch return;
+            writer.writeAll(",\"transcript\":") catch return;
+            writeJsonString(writer, row.transcript) catch return;
+            std.fmt.format(writer, ",\"started_at\":{d}", .{row.started_at}) catch return;
+            if (row.ended_at) |ended_at| {
+                std.fmt.format(writer, ",\"ended_at\":{d}", .{ended_at}) catch return;
+            }
+            writer.writeByte('}') catch return;
+        }
+        writer.writeByte(']') catch return;
+        sendResult(client, id, buf.items);
+    }
+
+    // -- Comment RPC handlers --
+
+    fn rpcCommentCreate(self: *Server, params: std.json.ObjectMap, id: ?std.json.Value, client: *Client) void {
+        const task_id = getStr(params, "task_id") orelse {
+            sendError(client, id, -32602, "Missing task_id");
+            return;
+        };
+        const content = getStr(params, "content") orelse "";
+        const author_type = getStr(params, "author_type") orelse "agent";
+        const author_id = getStr(params, "author_id") orelse "";
+        const parent_comment_id = getStr(params, "parent_comment_id");
+
+        const comment_id = std.fmt.allocPrint(self.allocator, "cmt-{d}", .{std.time.nanoTimestamp()}) catch return;
+        defer self.allocator.free(comment_id);
+
+        self.db.createComment(comment_id, task_id, author_type, author_id, content, parent_comment_id) catch |err| {
+            sendError(client, id, -32000, @errorName(err));
+            return;
+        };
+
+        var buf: [4096]u8 = undefined;
+        var fbs = std.io.fixedBufferStream(&buf);
+        const writer = fbs.writer();
+        writer.writeByte('{') catch return;
+        writer.writeAll("\"id\":") catch return;
+        writeJsonString(writer, comment_id) catch return;
+        writer.writeAll(",\"task_id\":") catch return;
+        writeJsonString(writer, task_id) catch return;
+        writer.writeAll(",\"author_type\":") catch return;
+        writeJsonString(writer, author_type) catch return;
+        writer.writeAll(",\"author_id\":") catch return;
+        writeJsonString(writer, author_id) catch return;
+        writer.writeAll(",\"content\":") catch return;
+        writeJsonString(writer, content) catch return;
+        if (parent_comment_id) |pid| {
+            writer.writeAll(",\"parent_comment_id\":") catch return;
+            writeJsonString(writer, pid) catch return;
+        }
+        writer.writeAll("}") catch return;
+        sendResult(client, id, fbs.getWritten());
+    }
+
+    fn rpcCommentList(self: *Server, params: std.json.ObjectMap, id: ?std.json.Value, client: *Client) void {
+        const task_id = getStr(params, "task_id") orelse {
+            sendError(client, id, -32602, "Missing task_id");
+            return;
+        };
+
+        const rows = self.db.listComments(self.allocator, task_id) catch {
+            sendResult(client, id, "[]");
+            return;
+        };
+        defer db_mod.freeCommentRows(self.allocator, rows);
+
+        var buf: [16384]u8 = undefined;
+        var fbs = std.io.fixedBufferStream(&buf);
+        const writer = fbs.writer();
+        writer.writeByte('[') catch return;
+        for (rows, 0..) |row, i| {
+            if (i > 0) writer.writeByte(',') catch return;
+            std.fmt.format(writer, "{{\"id\":\"{s}\",\"task_id\":\"{s}\",\"author_type\":\"{s}\",\"author_id\":\"{s}\"", .{ row.id, row.task_id, row.author_type, row.author_id }) catch return;
+            writer.writeAll(",\"content\":") catch return;
+            writeJsonString(writer, row.content) catch return;
+            if (row.parent_comment_id) |p| {
+                std.fmt.format(writer, ",\"parent_comment_id\":\"{s}\"", .{p}) catch return;
+            }
+            std.fmt.format(writer, ",\"created_at\":{d},\"updated_at\":{d}}}", .{ row.created_at, row.updated_at }) catch return;
+        }
+        writer.writeByte(']') catch return;
+        sendResult(client, id, fbs.getWritten());
+    }
+
+    fn rpcCommentUpdate(self: *Server, params: std.json.ObjectMap, id: ?std.json.Value, client: *Client) void {
+        const comment_id = getStr(params, "id") orelse {
+            sendError(client, id, -32602, "Missing id");
+            return;
+        };
+        const content = getStr(params, "content") orelse {
+            sendError(client, id, -32602, "Missing content");
+            return;
+        };
+
+        self.db.updateComment(comment_id, content) catch |err| {
+            sendError(client, id, -32000, @errorName(err));
+            return;
+        };
+
+        sendResult(client, id, "true");
+    }
+
+    fn rpcCommentDelete(self: *Server, params: std.json.ObjectMap, id: ?std.json.Value, client: *Client) void {
+        const comment_id = getStr(params, "id") orelse return;
+        self.db.deleteComment(comment_id) catch |err| {
+            sendError(client, id, -32000, @errorName(err));
+            return;
+        };
+        sendResult(client, id, "true");
+    }
+
+    fn rpcTaskBlock(self: *Server, params: std.json.ObjectMap, id: ?std.json.Value, client: *Client) void {
+        const task_id = getStr(params, "id") orelse return;
+        self.db.updateTask(task_id, null, null, "blocked", null, null, null, null, null, null, null, null) catch |err| {
+            sendError(client, id, -32000, @errorName(err));
+            return;
+        };
+        sendResult(client, id, "true");
+    }
+
+    fn rpcTaskCancel(self: *Server, params: std.json.ObjectMap, id: ?std.json.Value, client: *Client) void {
+        const task_id = getStr(params, "id") orelse return;
+        self.stopTaskExecution(task_id, "cancelled");
+        self.db.resetTaskDispatch(task_id, false) catch |err| {
+            sendError(client, id, -32000, @errorName(err));
+            return;
+        };
+        self.db.updateTask(task_id, null, null, "cancelled", null, null, null, null, null, null, null, null) catch |err| {
             sendError(client, id, -32000, @errorName(err));
             return;
         };
@@ -924,28 +1364,28 @@ pub const Server = struct {
         writer.writeByte('[') catch return;
         for (rows, 0..) |row, i| {
             if (i > 0) writer.writeByte(',') catch return;
-            std.fmt.format(writer, "{{\"id\":\"{s}\",\"space_id\":\"{s}\",\"provider_id\":\"{s}\",\"provider_name\":\"{s}\",\"status\":\"{s}\"", .{ row.id, row.space_id, row.provider_id, row.provider_name, row.status }) catch return;
+            writer.writeByte('{') catch return;
+            writer.writeAll("\"id\":") catch return;
+            writeJsonString(writer, row.id) catch return;
+            writer.writeAll(",\"space_id\":") catch return;
+            writeJsonString(writer, row.space_id) catch return;
+            writer.writeAll(",\"provider_id\":") catch return;
+            writeJsonString(writer, row.provider_id) catch return;
+            writer.writeAll(",\"provider_name\":") catch return;
+            writeJsonString(writer, row.provider_name) catch return;
+            writer.writeAll(",\"status\":") catch return;
+            writeJsonString(writer, row.status) catch return;
             if (row.session_id) |s| {
-                std.fmt.format(writer, ",\"session_id\":\"{s}\"", .{s}) catch return;
+                writer.writeAll(",\"session_id\":") catch return;
+                writeJsonString(writer, s) catch return;
             }
             if (row.assigned_task_id) |t| {
-                std.fmt.format(writer, ",\"assigned_task_id\":\"{s}\"", .{t}) catch return;
+                writer.writeAll(",\"assigned_task_id\":") catch return;
+                writeJsonString(writer, t) catch return;
             }
             if (row.prompt) |p| {
-                // Escape quotes in prompt for JSON
-                writer.writeAll(",\"prompt\":\"") catch return;
-                for (p) |ch| {
-                    if (ch == '"') {
-                        writer.writeAll("\\\"") catch return;
-                    } else if (ch == '\\') {
-                        writer.writeAll("\\\\") catch return;
-                    } else if (ch == '\n') {
-                        writer.writeAll("\\n") catch return;
-                    } else {
-                        writer.writeByte(ch) catch return;
-                    }
-                }
-                writer.writeByte('"') catch return;
+                writer.writeAll(",\"prompt\":") catch return;
+                writeJsonString(writer, p) catch return;
             }
             if (row.started_at) |s| {
                 std.fmt.format(writer, ",\"started_at\":{d}", .{s}) catch return;
@@ -1248,7 +1688,18 @@ pub const Server = struct {
 
         for (workspaces, 0..) |ws, wi| {
             if (wi > 0) writer.writeByte(',') catch return;
-            std.fmt.format(writer, "{{\"id\":\"{s}\",\"name\":\"{s}\",\"path\":\"{s}\",\"spaces\":[", .{ ws.id, ws.name, ws.path }) catch return;
+            writer.writeByte('{') catch return;
+            writer.writeAll("\"id\":") catch return;
+            writeJsonString(writer, ws.id) catch return;
+            writer.writeAll(",\"name\":") catch return;
+            writeJsonString(writer, ws.name) catch return;
+            writer.writeAll(",\"path\":") catch return;
+            writeJsonString(writer, ws.path) catch return;
+            if (ws.active_space_id) |active_space_id| {
+                writer.writeAll(",\"active_space_id\":") catch return;
+                writeJsonString(writer, active_space_id) catch return;
+            }
+            writer.writeAll(",\"spaces\":[") catch return;
 
             const spaces = self.db.listSpaces(self.allocator, ws.id) catch continue;
             defer {
@@ -1264,7 +1715,14 @@ pub const Server = struct {
 
             for (spaces, 0..) |sp, si| {
                 if (si > 0) writer.writeByte(',') catch return;
-                std.fmt.format(writer, "{{\"id\":\"{s}\",\"name\":\"{s}\",\"nodes\":[", .{ sp.id, sp.name }) catch return;
+                writer.writeByte('{') catch return;
+                writer.writeAll("\"id\":") catch return;
+                writeJsonString(writer, sp.id) catch return;
+                writer.writeAll(",\"name\":") catch return;
+                writeJsonString(writer, sp.name) catch return;
+                writer.writeAll(",\"directory_path\":") catch return;
+                writeJsonString(writer, sp.directory_path) catch return;
+                std.fmt.format(writer, ",\"sort_order\":{d},\"nodes\":[", .{sp.sort_order}) catch return;
 
                 const nodes = self.db.listNodes(self.allocator, sp.id) catch continue;
                 defer {
@@ -1282,7 +1740,13 @@ pub const Server = struct {
 
                 for (nodes, 0..) |node, ni| {
                     if (ni > 0) writer.writeByte(',') catch return;
-                    std.fmt.format(writer, "{{\"id\":\"{s}\",\"kind\":\"{s}\",\"title\":\"{s}\"", .{ node.id, node.kind, node.title }) catch return;
+                    writer.writeByte('{') catch return;
+                    writer.writeAll("\"id\":") catch return;
+                    writeJsonString(writer, node.id) catch return;
+                    writer.writeAll(",\"kind\":") catch return;
+                    writeJsonString(writer, node.kind) catch return;
+                    writer.writeAll(",\"title\":") catch return;
+                    writeJsonString(writer, node.title) catch return;
                     if (node.task_json) |tj| {
                         std.fmt.format(writer, ",\"task_json\":{s}", .{tj}) catch return;
                     }
@@ -1307,18 +1771,39 @@ pub const Server = struct {
                         self.allocator.free(task.queue_status);
                         if (task.assigned_agent_id) |a| self.allocator.free(a);
                         if (task.node_id) |n| self.allocator.free(n);
+                        if (task.identifier) |v| self.allocator.free(v);
+                        if (task.due_date) |v| self.allocator.free(v);
+                        if (task.labels) |v| self.allocator.free(v);
+                        if (task.completed_by_agent_id) |v| self.allocator.free(v);
+                        if (task.project_id) |v| self.allocator.free(v);
                     }
                     self.allocator.free(tasks);
                 }
 
                 for (tasks, 0..) |task, ti| {
                     if (ti > 0) writer.writeByte(',') catch return;
-                    std.fmt.format(writer, "{{\"id\":\"{s}\",\"space_id\":\"{s}\",\"title\":\"{s}\",\"description\":\"{s}\",\"status\":\"{s}\",\"priority\":\"{s}\",\"queue_status\":\"{s}\"", .{ task.id, task.space_id, task.title, task.description, task.status, task.priority, task.queue_status }) catch return;
+                    writer.writeByte('{') catch return;
+                    writer.writeAll("\"id\":") catch return;
+                    writeJsonString(writer, task.id) catch return;
+                    writer.writeAll(",\"space_id\":") catch return;
+                    writeJsonString(writer, task.space_id) catch return;
+                    writer.writeAll(",\"title\":") catch return;
+                    writeJsonString(writer, task.title) catch return;
+                    writer.writeAll(",\"description\":") catch return;
+                    writeJsonString(writer, task.description) catch return;
+                    writer.writeAll(",\"status\":") catch return;
+                    writeJsonString(writer, task.status) catch return;
+                    writer.writeAll(",\"priority\":") catch return;
+                    writeJsonString(writer, task.priority) catch return;
+                    writer.writeAll(",\"queue_status\":") catch return;
+                    writeJsonString(writer, task.queue_status) catch return;
                     if (task.parent_task_id) |p| {
-                        std.fmt.format(writer, ",\"parent_task_id\":\"{s}\"", .{p}) catch return;
+                        writer.writeAll(",\"parent_task_id\":") catch return;
+                        writeJsonString(writer, p) catch return;
                     }
                     if (task.assigned_agent_id) |a| {
-                        std.fmt.format(writer, ",\"assigned_agent_id\":\"{s}\"", .{a}) catch return;
+                        writer.writeAll(",\"assigned_agent_id\":") catch return;
+                        writeJsonString(writer, a) catch return;
                     }
                     if (task.queued_at) |q| {
                         std.fmt.format(writer, ",\"queued_at\":{d}", .{q}) catch return;
@@ -1329,7 +1814,30 @@ pub const Server = struct {
                     if (task.completed_at) |co| {
                         std.fmt.format(writer, ",\"completed_at\":{d}", .{co}) catch return;
                     }
-                    std.fmt.format(writer, ",\"created_at\":{d}}}", .{task.created_at}) catch return;
+                    if (task.identifier) |v| {
+                        writer.writeAll(",\"identifier\":") catch return;
+                        writeJsonString(writer, v) catch return;
+                    }
+                    if (task.due_date) |v| {
+                        writer.writeAll(",\"due_date\":") catch return;
+                        writeJsonString(writer, v) catch return;
+                    }
+                    if (task.labels) |v| {
+                        writer.writeAll(",\"labels\":") catch return;
+                        writer.writeAll(v) catch return;
+                    }
+                    if (task.estimate) |v| {
+                        std.fmt.format(writer, ",\"estimate\":{d}", .{v}) catch return;
+                    }
+                    if (task.completed_by_agent_id) |v| {
+                        writer.writeAll(",\"completed_by_agent_id\":") catch return;
+                        writeJsonString(writer, v) catch return;
+                    }
+                    if (task.project_id) |v| {
+                        writer.writeAll(",\"project_id\":") catch return;
+                        writeJsonString(writer, v) catch return;
+                    }
+                    std.fmt.format(writer, ",\"sort_order\":{d},\"created_at\":{d}}}", .{ task.sort_order, task.created_at }) catch return;
                 }
                 writer.writeAll("],\"agents\":[") catch return;
 
@@ -1352,19 +1860,40 @@ pub const Server = struct {
 
                 for (agents, 0..) |agent, ai| {
                     if (ai > 0) writer.writeByte(',') catch return;
-                    std.fmt.format(writer, "{{\"id\":\"{s}\",\"space_id\":\"{s}\",\"provider_id\":\"{s}\",\"provider_name\":\"{s}\",\"status\":\"{s}\"", .{ agent.id, agent.space_id, agent.provider_id, agent.provider_name, agent.status }) catch return;
+                    writer.writeByte('{') catch return;
+                    writer.writeAll("\"id\":") catch return;
+                    writeJsonString(writer, agent.id) catch return;
+                    writer.writeAll(",\"space_id\":") catch return;
+                    writeJsonString(writer, agent.space_id) catch return;
+                    writer.writeAll(",\"provider_id\":") catch return;
+                    writeJsonString(writer, agent.provider_id) catch return;
+                    writer.writeAll(",\"provider_name\":") catch return;
+                    writeJsonString(writer, agent.provider_name) catch return;
+                    writer.writeAll(",\"status\":") catch return;
+                    writeJsonString(writer, agent.status) catch return;
                     if (agent.session_id) |s| {
-                        std.fmt.format(writer, ",\"session_id\":\"{s}\"", .{s}) catch return;
+                        writer.writeAll(",\"session_id\":") catch return;
+                        writeJsonString(writer, s) catch return;
                     }
                     if (agent.assigned_task_id) |t| {
-                        std.fmt.format(writer, ",\"assigned_task_id\":\"{s}\"", .{t}) catch return;
+                        writer.writeAll(",\"assigned_task_id\":") catch return;
+                        writeJsonString(writer, t) catch return;
+                    }
+                    if (agent.prompt) |prompt| {
+                        writer.writeAll(",\"prompt\":") catch return;
+                        writeJsonString(writer, prompt) catch return;
+                    }
+                    if (agent.node_id) |node_id_value| {
+                        writer.writeAll(",\"node_id\":") catch return;
+                        writeJsonString(writer, node_id_value) catch return;
                     }
                     if (agent.started_at) |s| {
                         std.fmt.format(writer, ",\"started_at\":{d}", .{s}) catch return;
                     }
-                    std.fmt.format(writer, ",\"created_at\":{d}}}", .{agent.created_at}) catch return;
+                    std.fmt.format(writer, ",\"sort_order\":{d},\"created_at\":{d}}}", .{ agent.sort_order, agent.created_at }) catch return;
                 }
-                writer.writeAll("]}") catch return;
+                const inbox_count = self.db.unreadInboxCount(sp.id);
+                std.fmt.format(writer, "],\"unread_inbox_count\":{d}}}", .{inbox_count}) catch return;
             }
             writer.writeAll("]}") catch return;
         }
@@ -1731,6 +2260,36 @@ pub const Server = struct {
         }
     }
 
+    fn rpcTaskLiveOutputSave(self: *Server, params: std.json.ObjectMap, id: ?std.json.Value, client: *Client) void {
+        const task_id = getStr(params, "task_id") orelse return;
+        const session_id = getStr(params, "session_id") orelse return;
+        const data = getStr(params, "data") orelse return;
+        self.db.saveTaskLiveOutput(task_id, session_id, data) catch |err| {
+            sendError(client, id, -32000, @errorName(err));
+            return;
+        };
+        sendResult(client, id, "true");
+    }
+
+    fn rpcTaskLiveOutputLoad(self: *Server, params: std.json.ObjectMap, id: ?std.json.Value, client: *Client) void {
+        const task_id = getStr(params, "task_id") orelse return;
+        const session_id = getStr(params, "session_id") orelse return;
+        const data = self.db.loadTaskLiveOutput(self.allocator, task_id, session_id) catch null;
+        if (data) |loaded| {
+            defer self.allocator.free(loaded);
+            const encoded_len = std.base64.standard.Encoder.calcSize(loaded.len);
+            const encoded = self.allocator.alloc(u8, encoded_len) catch return;
+            defer self.allocator.free(encoded);
+            _ = std.base64.standard.Encoder.encode(encoded, loaded);
+
+            const json = std.fmt.allocPrint(self.allocator, "{{\"data\":\"{s}\"}}", .{encoded}) catch return;
+            defer self.allocator.free(json);
+            sendResult(client, id, json);
+        } else {
+            sendResult(client, id, "null");
+        }
+    }
+
     // -- Settings RPC --
 
     fn rpcSettingsGet(self: *Server, params: std.json.ObjectMap, id: ?std.json.Value, client: *Client) void {
@@ -1767,6 +2326,10 @@ pub const Server = struct {
                 const bytes = sess.pty_handle.read(&buf) catch |err| {
                     if (err == error.WouldBlock) continue;
                     sess.status = .exited;
+                    if (sess.kind == .agent) {
+                        self.db.finishTaskRun(entry.key_ptr.*, "completed") catch {};
+                        self.reconcileAgentSessionExit(entry.key_ptr.*);
+                    }
                     self.broadcastPtyExit(entry.key_ptr.*);
 
                     // Send notification on agent exit
@@ -1799,8 +2362,8 @@ pub const Server = struct {
         defer self.allocator.free(b64_buf);
         _ = std.base64.standard.Encoder.encode(b64_buf, data);
 
-        var msg_buf: [32768]u8 = undefined;
-        const msg = std.fmt.bufPrint(&msg_buf, "{{\"jsonrpc\":\"2.0\",\"method\":\"pty.data\",\"params\":{{\"session_id\":\"{s}\",\"data\":\"{s}\"}}}}", .{ session_id, b64_buf }) catch return;
+        const msg = std.fmt.allocPrint(self.allocator, "{{\"jsonrpc\":\"2.0\",\"method\":\"pty.data\",\"params\":{{\"session_id\":\"{s}\",\"data\":\"{s}\"}}}}", .{ session_id, b64_buf }) catch return;
+        defer self.allocator.free(msg);
         self.broadcastToClients(msg);
     }
 
@@ -1822,6 +2385,300 @@ pub const Server = struct {
         for (self.clients.items) |*client| {
             client.sendMessage(msg);
         }
+    }
+
+    // -- Project RPC --
+
+    fn rpcProjectCreate(self: *Server, params: std.json.ObjectMap, id: ?std.json.Value, client: *Client) void {
+        const space_id = getStr(params, "space_id") orelse {
+            sendError(client, id, -32602, "Missing space_id");
+            return;
+        };
+        const name = getStr(params, "name") orelse "";
+        const description = getStr(params, "description") orelse "";
+
+        const proj_id = std.fmt.allocPrint(self.allocator, "proj-{d}", .{std.time.nanoTimestamp()}) catch return;
+        defer self.allocator.free(proj_id);
+
+        self.db.createProject(proj_id, space_id, name, description) catch |err| {
+            sendError(client, id, -32000, @errorName(err));
+            return;
+        };
+
+        var buf: [2048]u8 = undefined;
+        var fbs = std.io.fixedBufferStream(&buf);
+        const writer = fbs.writer();
+        writer.writeByte('{') catch return;
+        writer.writeAll("\"id\":") catch return;
+        writeJsonString(writer, proj_id) catch return;
+        writer.writeAll(",\"space_id\":") catch return;
+        writeJsonString(writer, space_id) catch return;
+        writer.writeAll(",\"name\":") catch return;
+        writeJsonString(writer, name) catch return;
+        writer.writeAll(",\"description\":") catch return;
+        writeJsonString(writer, description) catch return;
+        writer.writeAll(",\"status\":\"active\"}") catch return;
+        sendResult(client, id, fbs.getWritten());
+    }
+
+    fn rpcProjectList(self: *Server, params: std.json.ObjectMap, id: ?std.json.Value, client: *Client) void {
+        const space_id = getStr(params, "space_id") orelse {
+            sendError(client, id, -32602, "Missing space_id");
+            return;
+        };
+        const rows = self.db.listProjects(self.allocator, space_id) catch {
+            sendResult(client, id, "[]");
+            return;
+        };
+        defer {
+            for (rows) |row| {
+                self.allocator.free(row.id);
+                self.allocator.free(row.space_id);
+                self.allocator.free(row.name);
+                self.allocator.free(row.description);
+                self.allocator.free(row.status);
+            }
+            self.allocator.free(rows);
+        }
+        var buf: [32768]u8 = undefined;
+        var fbs = std.io.fixedBufferStream(&buf);
+        const writer = fbs.writer();
+        writer.writeByte('[') catch return;
+        for (rows, 0..) |row, i| {
+            if (i > 0) writer.writeByte(',') catch return;
+            writer.writeByte('{') catch return;
+            writer.writeAll("\"id\":") catch return;
+            writeJsonString(writer, row.id) catch return;
+            writer.writeAll(",\"space_id\":") catch return;
+            writeJsonString(writer, row.space_id) catch return;
+            writer.writeAll(",\"name\":") catch return;
+            writeJsonString(writer, row.name) catch return;
+            writer.writeAll(",\"description\":") catch return;
+            writeJsonString(writer, row.description) catch return;
+            writer.writeAll(",\"status\":") catch return;
+            writeJsonString(writer, row.status) catch return;
+            std.fmt.format(writer, ",\"created_at\":{d}}}", .{row.created_at}) catch return;
+        }
+        writer.writeByte(']') catch return;
+        sendResult(client, id, fbs.getWritten());
+    }
+
+    fn rpcProjectUpdate(self: *Server, params: std.json.ObjectMap, id: ?std.json.Value, client: *Client) void {
+        const proj_id = getStr(params, "id") orelse {
+            sendError(client, id, -32602, "Missing id");
+            return;
+        };
+        self.db.updateProject(proj_id, getStr(params, "name"), getStr(params, "description"), getStr(params, "status")) catch |err| {
+            sendError(client, id, -32000, @errorName(err));
+            return;
+        };
+        sendResult(client, id, "true");
+    }
+
+    fn rpcProjectDelete(self: *Server, params: std.json.ObjectMap, id: ?std.json.Value, client: *Client) void {
+        const proj_id = getStr(params, "id") orelse {
+            sendError(client, id, -32602, "Missing id");
+            return;
+        };
+        self.db.deleteProject(proj_id) catch |err| {
+            sendError(client, id, -32000, @errorName(err));
+            return;
+        };
+        sendResult(client, id, "true");
+    }
+
+    // -- Inbox RPC --
+
+    fn rpcInboxList(self: *Server, params: std.json.ObjectMap, id: ?std.json.Value, client: *Client) void {
+        const space_id = getStr(params, "space_id") orelse {
+            sendError(client, id, -32602, "Missing space_id");
+            return;
+        };
+        const rows = self.db.listInboxItems(self.allocator, space_id) catch {
+            sendResult(client, id, "[]");
+            return;
+        };
+        defer {
+            for (rows) |row| {
+                self.allocator.free(row.id);
+                self.allocator.free(row.space_id);
+                self.allocator.free(row.item_type);
+                self.allocator.free(row.item_id);
+                self.allocator.free(row.message);
+            }
+            self.allocator.free(rows);
+        }
+        var buf: [32768]u8 = undefined;
+        var fbs = std.io.fixedBufferStream(&buf);
+        const writer = fbs.writer();
+        writer.writeByte('[') catch return;
+        for (rows, 0..) |row, i| {
+            if (i > 0) writer.writeByte(',') catch return;
+            writer.writeByte('{') catch return;
+            writer.writeAll("\"id\":") catch return;
+            writeJsonString(writer, row.id) catch return;
+            writer.writeAll(",\"space_id\":") catch return;
+            writeJsonString(writer, row.space_id) catch return;
+            writer.writeAll(",\"item_type\":") catch return;
+            writeJsonString(writer, row.item_type) catch return;
+            writer.writeAll(",\"item_id\":") catch return;
+            writeJsonString(writer, row.item_id) catch return;
+            writer.writeAll(",\"message\":") catch return;
+            writeJsonString(writer, row.message) catch return;
+            std.fmt.format(writer, ",\"read\":{s},\"created_at\":{d}}}", .{ if (row.read) "true" else "false", row.created_at }) catch return;
+        }
+        writer.writeByte(']') catch return;
+        sendResult(client, id, fbs.getWritten());
+    }
+
+    fn rpcInboxMarkRead(self: *Server, params: std.json.ObjectMap, id: ?std.json.Value, client: *Client) void {
+        const item_id = getStr(params, "id") orelse {
+            sendError(client, id, -32602, "Missing id");
+            return;
+        };
+        self.db.markInboxItemRead(item_id) catch |err| {
+            sendError(client, id, -32000, @errorName(err));
+            return;
+        };
+        sendResult(client, id, "true");
+    }
+
+    fn rpcInboxMarkAllRead(self: *Server, params: std.json.ObjectMap, id: ?std.json.Value, client: *Client) void {
+        const space_id = getStr(params, "space_id") orelse {
+            sendError(client, id, -32602, "Missing space_id");
+            return;
+        };
+        self.db.markAllInboxItemsRead(space_id) catch |err| {
+            sendError(client, id, -32000, @errorName(err));
+            return;
+        };
+        sendResult(client, id, "true");
+    }
+
+    // -- Autopilot RPC --
+
+    fn rpcAutopilotCreate(self: *Server, params: std.json.ObjectMap, id: ?std.json.Value, client: *Client) void {
+        const space_id = getStr(params, "space_id") orelse {
+            sendError(client, id, -32602, "Missing space_id");
+            return;
+        };
+        const name = getStr(params, "name") orelse "";
+        const trigger_config = getStr(params, "trigger_config") orelse "{}";
+        const action_config = getStr(params, "action_config") orelse "{}";
+
+        const ap_id = std.fmt.allocPrint(self.allocator, "ap-{d}", .{std.time.nanoTimestamp()}) catch return;
+        defer self.allocator.free(ap_id);
+
+        self.db.createAutopilot(ap_id, space_id, name, trigger_config, action_config) catch |err| {
+            sendError(client, id, -32000, @errorName(err));
+            return;
+        };
+
+        var buf: [2048]u8 = undefined;
+        var fbs = std.io.fixedBufferStream(&buf);
+        const writer = fbs.writer();
+        writer.writeByte('{') catch return;
+        writer.writeAll("\"id\":") catch return;
+        writeJsonString(writer, ap_id) catch return;
+        writer.writeAll(",\"space_id\":") catch return;
+        writeJsonString(writer, space_id) catch return;
+        writer.writeAll(",\"name\":") catch return;
+        writeJsonString(writer, name) catch return;
+        writer.writeAll(",\"trigger_config\":") catch return;
+        writer.writeAll(trigger_config) catch return;
+        writer.writeAll(",\"action_config\":") catch return;
+        writer.writeAll(action_config) catch return;
+        writer.writeAll(",\"enabled\":true}") catch return;
+        sendResult(client, id, fbs.getWritten());
+    }
+
+    fn rpcAutopilotList(self: *Server, params: std.json.ObjectMap, id: ?std.json.Value, client: *Client) void {
+        const space_id = getStr(params, "space_id") orelse {
+            sendError(client, id, -32602, "Missing space_id");
+            return;
+        };
+        const rows = self.db.listAutopilots(self.allocator, space_id) catch {
+            sendResult(client, id, "[]");
+            return;
+        };
+        defer {
+            for (rows) |row| {
+                self.allocator.free(row.id);
+                self.allocator.free(row.space_id);
+                self.allocator.free(row.name);
+                self.allocator.free(row.trigger_config);
+                self.allocator.free(row.action_config);
+            }
+            self.allocator.free(rows);
+        }
+        var buf: [32768]u8 = undefined;
+        var fbs = std.io.fixedBufferStream(&buf);
+        const writer = fbs.writer();
+        writer.writeByte('[') catch return;
+        for (rows, 0..) |row, i| {
+            if (i > 0) writer.writeByte(',') catch return;
+            writer.writeByte('{') catch return;
+            writer.writeAll("\"id\":") catch return;
+            writeJsonString(writer, row.id) catch return;
+            writer.writeAll(",\"space_id\":") catch return;
+            writeJsonString(writer, row.space_id) catch return;
+            writer.writeAll(",\"name\":") catch return;
+            writeJsonString(writer, row.name) catch return;
+            writer.writeAll(",\"trigger_config\":") catch return;
+            writer.writeAll(row.trigger_config) catch return;
+            writer.writeAll(",\"action_config\":") catch return;
+            writer.writeAll(row.action_config) catch return;
+            std.fmt.format(writer, ",\"enabled\":{s},\"created_at\":{d}}}", .{ if (row.enabled) "true" else "false", row.created_at }) catch return;
+        }
+        writer.writeByte(']') catch return;
+        sendResult(client, id, fbs.getWritten());
+    }
+
+    fn rpcAutopilotUpdate(self: *Server, params: std.json.ObjectMap, id: ?std.json.Value, client: *Client) void {
+        const ap_id = getStr(params, "id") orelse {
+            sendError(client, id, -32602, "Missing id");
+            return;
+        };
+        self.db.updateAutopilot(ap_id, getStr(params, "name"), getStr(params, "trigger_config"), getStr(params, "action_config")) catch |err| {
+            sendError(client, id, -32000, @errorName(err));
+            return;
+        };
+        sendResult(client, id, "true");
+    }
+
+    fn rpcAutopilotDelete(self: *Server, params: std.json.ObjectMap, id: ?std.json.Value, client: *Client) void {
+        const ap_id = getStr(params, "id") orelse {
+            sendError(client, id, -32602, "Missing id");
+            return;
+        };
+        self.db.deleteAutopilot(ap_id) catch |err| {
+            sendError(client, id, -32000, @errorName(err));
+            return;
+        };
+        sendResult(client, id, "true");
+    }
+
+    fn rpcAutopilotSetEnabled(self: *Server, params: std.json.ObjectMap, id: ?std.json.Value, client: *Client) void {
+        const ap_id = getStr(params, "id") orelse {
+            sendError(client, id, -32602, "Missing id");
+            return;
+        };
+        const enabled_val = params.get("enabled") orelse {
+            sendError(client, id, -32602, "Missing enabled");
+            return;
+        };
+        const enabled = switch (enabled_val) {
+            .bool => |b| b,
+            else => {
+                sendError(client, id, -32602, "enabled must be boolean");
+                return;
+            },
+        };
+        self.db.setAutopilotEnabled(ap_id, enabled) catch |err| {
+            sendError(client, id, -32000, @errorName(err));
+            return;
+        };
+        sendResult(client, id, "true");
     }
 };
 
@@ -1897,7 +2754,6 @@ const Client = struct {
     }
 };
 
-// -- Helpers --
 
 fn getStr(params: std.json.ObjectMap, key: []const u8) ?[]const u8 {
     const val = params.get(key) orelse return null;
@@ -1950,10 +2806,10 @@ fn writeJsonString(writer: anytype, value: []const u8) !void {
 }
 
 fn sendResult(client: *Client, id: ?std.json.Value, result: []const u8) void {
-    var buf: [32768]u8 = undefined;
     var id_buf: [32]u8 = undefined;
     const id_str = formatId(id, &id_buf);
-    const msg = std.fmt.bufPrint(&buf, "{{\"jsonrpc\":\"2.0\",\"id\":{s},\"result\":{s}}}", .{ id_str, result }) catch return;
+    const msg = std.fmt.allocPrint(client.allocator, "{{\"jsonrpc\":\"2.0\",\"id\":{s},\"result\":{s}}}", .{ id_str, result }) catch return;
+    defer client.allocator.free(msg);
     client.sendMessage(msg);
 }
 

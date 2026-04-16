@@ -1,0 +1,21 @@
+{
+  "name": "nexus",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.33.0",
+  "scripts": {
+    "dev": "pnpm --filter @nexus/web dev",
+    "build": "pnpm --filter @nexus/web build",
+    "typecheck": "pnpm --filter @nexus/web exec tsc -b --pretty false",
+    "lint": "pnpm --filter @nexus/web lint",
+    "test": "pnpm --filter @nexus/web test && zig build test"
+  },
+  "devDependencies": {
+    "typescript": "^6.0.2",
+    "ws": "^8.20.0"
+  },
+  "dependencies": {
+    "@base-ui/react": "^1.4.0"
+  }
+}

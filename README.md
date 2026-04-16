@@ -37,8 +37,9 @@ git clone https://github.com/user/nexus.git && cd nexus
 # Install submodules
 git submodule update --init --recursive
 
-# Build frontend
-cd frontend-v2 && bun install && bun run build && cd ..
+# Install dependencies and build the frontend
+pnpm install
+pnpm build
 
 # Build & run daemon
 zig build run
@@ -49,7 +50,8 @@ The daemon will start on a random port and automatically open your browser.
 ### Requirements
 
 - Zig 0.15.2+
-- Bun or Node.js 20+
+- Node.js 20+
+- pnpm 10+
 
 ## Architecture
 
@@ -75,7 +77,7 @@ The daemon will start on a random port and automatically open your browser.
 
 ```bash
 # Build frontend
-cd frontend-v2 && bun run build && cd ..
+pnpm build
 
 # Run daemon (opens browser automatically)
 zig build run
@@ -87,8 +89,8 @@ zig build -Doptimize=ReleaseFast
 ## Testing
 
 ```bash
-# Backend Zig tests
-zig build test
+# Frontend + backend tests
+pnpm test
 ```
 
 ## Project Structure
@@ -102,7 +104,7 @@ zig build test
 │   ├── db.zig        # SQLite persistence
 │   ├── macos.zig     # macOS native folder picker
 │   └── notify.zig    # System notifications
-├── frontend-v2/       # React frontend
+├── apps/web/          # Active React frontend workspace
 │   ├── src/
 │   │   ├── app/       # Router, layout, providers
 │   │   ├── features/  # Tasks, agents, terminal, chat, settings
@@ -111,6 +113,7 @@ zig build test
 │   │   └── stores/    # Zustand stores
 │   └── package.json
 ├── ghostty-web/       # Terminal emulation (submodule)
+├── pnpm-workspace.yaml
 ├── build.zig
 └── README.md
 ```
@@ -144,8 +147,9 @@ git clone https://github.com/user/nexus.git && cd nexus
 # 初始化子模块
 git submodule update --init --recursive
 
-# 构建前端
-cd frontend-v2 && bun install && bun run build && cd ..
+# 安装依赖并构建前端
+pnpm install
+pnpm build
 
 # 构建并运行守护进程
 zig build run
@@ -156,7 +160,8 @@ zig build run
 ### 依赖
 
 - Zig 0.15.2+
-- Bun 或 Node.js 20+
+- Node.js 20+
+- pnpm 10+
 
 ## 许可证
 

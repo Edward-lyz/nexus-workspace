@@ -17,7 +17,7 @@ pub fn main() !void {
     // Resolve frontend dist directory
     const static_root = resolveFrontendDir(allocator) catch |err| {
         std.log.err("frontend dist not found: {}", .{err});
-        std.log.err("Run 'cd frontend-v2 && bun run build' first.", .{});
+        std.log.err("Run 'pnpm build' or 'cd apps/web && pnpm build' first.", .{});
         return err;
     };
     defer allocator.free(static_root);
@@ -89,12 +89,9 @@ fn openBrowser(url: []const u8) void {
 
 fn resolveFrontendDir(allocator: std.mem.Allocator) ![]u8 {
     const candidates = [_][]const u8{
-        "frontend-v2/dist",
-        "frontend/dist",
-        "../frontend-v2/dist",
-        "../frontend/dist",
-        "../../frontend-v2/dist",
-        "../../frontend/dist",
+        "apps/web/dist",
+        "../apps/web/dist",
+        "../../apps/web/dist",
         "../Resources/static", // macOS .app bundle
     };
 

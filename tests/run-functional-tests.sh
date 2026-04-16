@@ -3,6 +3,7 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-npm --prefix "$repo_root/frontend" run test:run
+pnpm --dir "$repo_root" --filter @nexus/web test
 cd "$repo_root"
 zig build test
+node tests/runtime-integration.mjs

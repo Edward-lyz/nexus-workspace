@@ -30,6 +30,11 @@ pub const Db = struct {
             return error.SqliteOpenFailed;
         }
 
+        if (c.sqlite3_exec(handle.?, "PRAGMA foreign_keys = ON", null, null, null) != c.SQLITE_OK) {
+            _ = c.sqlite3_close(handle.?);
+            return error.SqlitePragmaFailed;
+        }
+
         var db = Db{
             .handle = handle.?,
             .allocator = allocator,
@@ -151,6 +156,117 @@ pub const Db = struct {
             self.migrateJsonToTables();
 
             self.setUserVersion(2);
+        }
+
+        if (version < 3) {
+            // v3: 扩展 task 字段 + comments 表
+            // SQLite ALTER TABLE ADD COLUMN 如果列已存在会报错，用 _ = 忽略
+            const new_columns = [_][*:0]const u8{
+                "ALTER TABLE tasks ADD COLUMN identifier TEXT",
+                "ALTER TABLE tasks ADD COLUMN due_date TEXT",
+                "ALTER TABLE tasks ADD COLUMN labels TEXT DEFAULT '[]'",
+                "ALTER TABLE tasks ADD COLUMN estimate INTEGER",
+                "ALTER TABLE tasks ADD COLUMN completed_by_agent_id TEXT",
+                "ALTER TABLE tasks ADD COLUMN project_id TEXT",
+            };
+            for (new_columns) |sql| {
+                _ = c.sqlite3_exec(self.handle, sql, null, null, null);
+            }
+
+            try self.execMulti(
+                \\CREATE TABLE IF NOT EXISTS comments (
+                \\  id TEXT PRIMARY KEY,
+                \\  task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+                \\  author_type TEXT NOT NULL DEFAULT 'agent',
+                \\  author_id TEXT NOT NULL,
+                \\  content TEXT NOT NULL DEFAULT '',
+                \\  parent_comment_id TEXT REFERENCES comments(id) ON DELETE CASCADE,
+                \\  created_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
+                \\  updated_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
+                \\);
+                \\CREATE INDEX IF NOT EXISTS idx_comments_task ON comments(task_id);
+            );
+
+            self.setUserVersion(3);
+        }
+
+        if (version < 4) {
+            try self.execMulti(
+                \\CREATE TABLE IF NOT EXISTS task_runs (
+                \\  id TEXT PRIMARY KEY,
+                \\  task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+                \\  agent_id TEXT REFERENCES agents(id) ON DELETE SET NULL,
+                \\  provider_id TEXT NOT NULL DEFAULT 'unknown',
+                \\  provider_name TEXT NOT NULL DEFAULT 'Agent',
+                \\  session_id TEXT,
+                \\  status TEXT NOT NULL DEFAULT 'running',
+                \\  transcript TEXT NOT NULL DEFAULT '',
+                \\  started_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
+                \\  ended_at INTEGER
+                \\);
+                \\CREATE INDEX IF NOT EXISTS idx_task_runs_task_started ON task_runs(task_id, started_at DESC);
+                \\CREATE UNIQUE INDEX IF NOT EXISTS idx_task_runs_session ON task_runs(session_id) WHERE session_id IS NOT NULL;
+                \\
+                \\CREATE TABLE IF NOT EXISTS task_live_output (
+                \\  task_id TEXT PRIMARY KEY REFERENCES tasks(id) ON DELETE CASCADE,
+                \\  session_id TEXT NOT NULL DEFAULT '',
+                \\  data TEXT NOT NULL DEFAULT ''
+                \\);
+            );
+
+            self.setUserVersion(4);
+        }
+
+        if (version < 5) {
+            try self.execMulti(
+                \\CREATE TABLE IF NOT EXISTS space_sequences (
+                \\  space_id TEXT PRIMARY KEY REFERENCES spaces(id) ON DELETE CASCADE,
+                \\  last_seq INTEGER NOT NULL DEFAULT 0
+                \\);
+                \\
+                \\CREATE TABLE IF NOT EXISTS projects (
+                \\  id TEXT PRIMARY KEY,
+                \\  space_id TEXT NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
+                \\  name TEXT NOT NULL DEFAULT '',
+                \\  description TEXT NOT NULL DEFAULT '',
+                \\  status TEXT NOT NULL DEFAULT 'active',
+                \\  created_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
+                \\);
+                \\CREATE INDEX IF NOT EXISTS idx_projects_space ON projects(space_id);
+            );
+            self.setUserVersion(5);
+        }
+
+        if (version < 6) {
+            try self.execMulti(
+                \\CREATE TABLE IF NOT EXISTS inbox_items (
+                \\  id TEXT PRIMARY KEY,
+                \\  space_id TEXT NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
+                \\  item_type TEXT NOT NULL DEFAULT 'task_completed',
+                \\  item_id TEXT NOT NULL DEFAULT '',
+                \\  message TEXT NOT NULL DEFAULT '',
+                \\  read INTEGER NOT NULL DEFAULT 0,
+                \\  created_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
+                \\);
+                \\CREATE INDEX IF NOT EXISTS idx_inbox_space_read ON inbox_items(space_id, read);
+            );
+            self.setUserVersion(6);
+        }
+
+        if (version < 7) {
+            try self.execMulti(
+                \\CREATE TABLE IF NOT EXISTS autopilots (
+                \\  id TEXT PRIMARY KEY,
+                \\  space_id TEXT NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
+                \\  name TEXT NOT NULL DEFAULT '',
+                \\  trigger_config TEXT NOT NULL DEFAULT '{}',
+                \\  action_config TEXT NOT NULL DEFAULT '{}',
+                \\  enabled INTEGER NOT NULL DEFAULT 1,
+                \\  created_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
+                \\);
+                \\CREATE INDEX IF NOT EXISTS idx_autopilots_space ON autopilots(space_id);
+            );
+            self.setUserVersion(7);
         }
     }
 
@@ -337,6 +453,13 @@ pub const Db = struct {
         );
     }
 
+    pub fn ensureNode(self: *Db, id: []const u8, space_id: []const u8, kind: []const u8, title: []const u8) !void {
+        try self.execBind(
+            "INSERT OR IGNORE INTO nodes (id, space_id, kind, title) VALUES (?1, ?2, ?3, ?4)",
+            .{ id, space_id, kind, title },
+        );
+    }
+
     pub fn updateNodeSession(self: *Db, node_id: []const u8, session_id: []const u8) !void {
         try self.execBind(
             "UPDATE nodes SET session_id = ?2 WHERE id = ?1",
@@ -400,7 +523,7 @@ pub const Db = struct {
     pub fn saveScrollback(self: *Db, node_id: []const u8, data: []const u8) !void {
         try self.execBind(
             "INSERT INTO node_scrollback (node_id, data) VALUES (?1, ?2) " ++
-                "ON CONFLICT(node_id) DO UPDATE SET data = COALESCE(node_scrollback.data, '') || excluded.data",
+                "ON CONFLICT(node_id) DO UPDATE SET data = excluded.data",
             .{ node_id, data },
         );
     }
@@ -422,6 +545,103 @@ pub const Db = struct {
         return result;
     }
 
+    pub fn saveTaskLiveOutput(self: *Db, task_id: []const u8, session_id: []const u8, data: []const u8) !void {
+        try self.execBind(
+            "INSERT INTO task_live_output (task_id, session_id, data) VALUES (?1, ?2, ?3) " ++
+                "ON CONFLICT(task_id) DO UPDATE SET session_id = excluded.session_id, data = excluded.data",
+            .{ task_id, session_id, data },
+        );
+    }
+
+    pub fn loadTaskLiveOutput(self: *Db, allocator: Allocator, task_id: []const u8, session_id: []const u8) !?[]const u8 {
+        var stmt: ?*c.sqlite3_stmt = null;
+        if (c.sqlite3_prepare_v2(self.handle, "SELECT data FROM task_live_output WHERE task_id = ?1 AND session_id = ?2", -1, &stmt, null) != c.SQLITE_OK) return null;
+        defer _ = c.sqlite3_finalize(stmt);
+
+        bindText(stmt.?, 1, task_id);
+        bindText(stmt.?, 2, session_id);
+        if (c.sqlite3_step(stmt.?) != c.SQLITE_ROW) return null;
+
+        return @as(?[]const u8, try dupeColumnText(allocator, stmt.?, 0));
+    }
+
+    pub fn startTaskRun(
+        self: *Db,
+        task_id: []const u8,
+        agent_id: ?[]const u8,
+        provider_id: []const u8,
+        provider_name: []const u8,
+        session_id: []const u8,
+    ) !void {
+        const run_id = try std.fmt.allocPrint(self.allocator, "run-{d}", .{std.time.nanoTimestamp()});
+        defer self.allocator.free(run_id);
+
+        _ = c.sqlite3_exec(self.handle, "BEGIN TRANSACTION", null, null, null);
+        errdefer _ = c.sqlite3_exec(self.handle, "ROLLBACK", null, null, null);
+
+        try self.execBind("DELETE FROM task_live_output WHERE task_id = ?1", .{task_id});
+        try self.execBind(
+            "INSERT INTO task_live_output (task_id, session_id, data) VALUES (?1, ?2, '')",
+            .{ task_id, session_id },
+        );
+        try self.execBind(
+            "INSERT INTO task_runs (id, task_id, agent_id, provider_id, provider_name, session_id, status) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'running')",
+            .{ run_id, task_id, agent_id, provider_id, provider_name, session_id },
+        );
+
+        _ = c.sqlite3_exec(self.handle, "COMMIT", null, null, null);
+    }
+
+    pub fn finishTaskRun(self: *Db, session_id: []const u8, status: []const u8) !void {
+        _ = c.sqlite3_exec(self.handle, "BEGIN TRANSACTION", null, null, null);
+        errdefer _ = c.sqlite3_exec(self.handle, "ROLLBACK", null, null, null);
+
+        try self.execBind(
+            "UPDATE task_runs SET " ++
+                "status = ?2, " ++
+                "transcript = COALESCE((SELECT data FROM task_live_output WHERE task_live_output.task_id = task_runs.task_id AND task_live_output.session_id = task_runs.session_id), ''), " ++
+                "ended_at = COALESCE(ended_at, strftime('%s','now')) " ++
+                "WHERE session_id = ?1 AND ended_at IS NULL",
+            .{ session_id, status },
+        );
+        try self.execBind("DELETE FROM task_live_output WHERE session_id = ?1", .{session_id});
+
+        _ = c.sqlite3_exec(self.handle, "COMMIT", null, null, null);
+    }
+
+    pub fn listTaskRuns(self: *Db, allocator: Allocator, task_id: []const u8) ![]TaskRunRow {
+        var stmt: ?*c.sqlite3_stmt = null;
+        if (c.sqlite3_prepare_v2(
+            self.handle,
+            "SELECT id, task_id, agent_id, provider_id, provider_name, session_id, status, transcript, started_at, ended_at " ++
+                "FROM task_runs WHERE task_id = ?1 ORDER BY started_at DESC, id DESC",
+            -1,
+            &stmt,
+            null,
+        ) != c.SQLITE_OK) return &.{};
+        defer _ = c.sqlite3_finalize(stmt);
+
+        bindText(stmt.?, 1, task_id);
+
+        var list: std.ArrayList(TaskRunRow) = .empty;
+        while (c.sqlite3_step(stmt.?) == c.SQLITE_ROW) {
+            const row = TaskRunRow{
+                .id = dupeColumnText(allocator, stmt.?, 0) catch continue,
+                .task_id = dupeColumnText(allocator, stmt.?, 1) catch continue,
+                .agent_id = dupeColumnTextOpt(allocator, stmt.?, 2),
+                .provider_id = dupeColumnText(allocator, stmt.?, 3) catch continue,
+                .provider_name = dupeColumnText(allocator, stmt.?, 4) catch continue,
+                .session_id = dupeColumnTextOpt(allocator, stmt.?, 5),
+                .status = dupeColumnText(allocator, stmt.?, 6) catch continue,
+                .transcript = dupeColumnText(allocator, stmt.?, 7) catch continue,
+                .started_at = c.sqlite3_column_int64(stmt.?, 8),
+                .ended_at = if (c.sqlite3_column_type(stmt.?, 9) != c.SQLITE_NULL) c.sqlite3_column_int64(stmt.?, 9) else null,
+            };
+            list.append(allocator, row) catch break;
+        }
+        return list.toOwnedSlice(allocator) catch &.{};
+    }
+
     // -- Settings --
 
     pub fn getSetting(self: *Db, allocator: Allocator, key: []const u8) !?[]u8 {
@@ -435,6 +655,23 @@ pub const Db = struct {
         const ptr = c.sqlite3_column_text(stmt.?, 0);
         const len: usize = @intCast(c.sqlite3_column_bytes(stmt.?, 0));
         if (ptr == null or len == 0) return null;
+
+        const result = try allocator.alloc(u8, len);
+        @memcpy(result, ptr[0..len]);
+        return result;
+    }
+
+    pub fn getSpaceDirectoryPath(self: *Db, allocator: Allocator, space_id: []const u8) !?[]u8 {
+        var stmt: ?*c.sqlite3_stmt = null;
+        if (c.sqlite3_prepare_v2(self.handle, "SELECT directory_path FROM spaces WHERE id = ?1", -1, &stmt, null) != c.SQLITE_OK) return null;
+        defer _ = c.sqlite3_finalize(stmt);
+
+        bindText(stmt.?, 1, space_id);
+        if (c.sqlite3_step(stmt.?) != c.SQLITE_ROW) return null;
+
+        const ptr = c.sqlite3_column_text(stmt.?, 0);
+        const len: usize = @intCast(c.sqlite3_column_bytes(stmt.?, 0));
+        if (ptr == null) return null;
 
         const result = try allocator.alloc(u8, len);
         @memcpy(result, ptr[0..len]);
@@ -463,6 +700,50 @@ pub const Db = struct {
             "INSERT INTO tasks (id, space_id, title, description, priority, parent_task_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             .{ id, space_id, title, description, priority, parent_task_id },
         );
+        if (self.nextTaskIdentifier(space_id)) |ident| {
+            defer self.allocator.free(ident);
+            self.execBind("UPDATE tasks SET identifier = ?2 WHERE id = ?1", .{ id, ident }) catch {};
+        }
+    }
+
+    fn nextTaskIdentifier(self: *Db, space_id: []const u8) ?[]u8 {
+        var name_stmt: ?*c.sqlite3_stmt = null;
+        if (c.sqlite3_prepare_v2(self.handle, "SELECT name FROM spaces WHERE id = ?1", -1, &name_stmt, null) != c.SQLITE_OK) return null;
+        defer _ = c.sqlite3_finalize(name_stmt);
+        bindText(name_stmt.?, 1, space_id);
+        if (c.sqlite3_step(name_stmt.?) != c.SQLITE_ROW) return null;
+
+        const name_ptr = c.sqlite3_column_text(name_stmt.?, 0);
+        const name_len: usize = @intCast(c.sqlite3_column_bytes(name_stmt.?, 0));
+
+        var prefix = [_]u8{ 'N', 'X' };
+        var prefix_count: usize = 0;
+        if (name_ptr != null and name_len > 0) {
+            var i: usize = 0;
+            while (i < name_len and prefix_count < 2) : (i += 1) {
+                const ch = name_ptr[i];
+                if (std.ascii.isAlphanumeric(ch)) {
+                    prefix[prefix_count] = std.ascii.toUpper(ch);
+                    prefix_count += 1;
+                }
+            }
+        }
+        if (prefix_count < 2) prefix_count = 2;
+
+        var seq_stmt: ?*c.sqlite3_stmt = null;
+        if (c.sqlite3_prepare_v2(
+            self.handle,
+            "INSERT INTO space_sequences (space_id, last_seq) VALUES (?1, 1) ON CONFLICT(space_id) DO UPDATE SET last_seq = last_seq + 1 RETURNING last_seq",
+            -1,
+            &seq_stmt,
+            null,
+        ) != c.SQLITE_OK) return null;
+        defer _ = c.sqlite3_finalize(seq_stmt);
+        bindText(seq_stmt.?, 1, space_id);
+        if (c.sqlite3_step(seq_stmt.?) != c.SQLITE_ROW) return null;
+        const seq = c.sqlite3_column_int64(seq_stmt.?, 0);
+
+        return std.fmt.allocPrint(self.allocator, "{s}-{d}", .{ prefix[0..prefix_count], seq }) catch null;
     }
 
     pub fn updateTask(
@@ -473,6 +754,12 @@ pub const Db = struct {
         status: ?[]const u8,
         priority: ?[]const u8,
         queue_status: ?[]const u8,
+        identifier: ?[]const u8,
+        due_date: ?[]const u8,
+        labels: ?[]const u8,
+        estimate: ?i32,
+        project_id: ?[]const u8,
+        completed_by_agent_id: ?[]const u8,
     ) !void {
         // Build dynamic UPDATE statement
         if (title) |t| {
@@ -489,6 +776,33 @@ pub const Db = struct {
         }
         if (queue_status) |q| {
             try self.execBind("UPDATE tasks SET queue_status = ?2 WHERE id = ?1", .{ id, q });
+        }
+        if (identifier) |val| {
+            try self.execBind("UPDATE tasks SET identifier = ?2 WHERE id = ?1", .{ id, val });
+        }
+        if (due_date) |val| {
+            try self.execBind("UPDATE tasks SET due_date = ?2 WHERE id = ?1", .{ id, val });
+        }
+        if (labels) |val| {
+            try self.execBind("UPDATE tasks SET labels = ?2 WHERE id = ?1", .{ id, val });
+        }
+        if (estimate) |val| {
+            var stmt: ?*c.sqlite3_stmt = null;
+            if (c.sqlite3_prepare_v2(self.handle, "UPDATE tasks SET estimate = ?2 WHERE id = ?1", -1, &stmt, null) != c.SQLITE_OK) {
+                return error.SqlitePrepareFailed;
+            }
+            defer _ = c.sqlite3_finalize(stmt);
+            bindText(stmt.?, 1, id);
+            _ = c.sqlite3_bind_int(stmt.?, 2, val);
+            if (c.sqlite3_step(stmt.?) != c.SQLITE_DONE) {
+                return error.SqliteStepFailed;
+            }
+        }
+        if (project_id) |val| {
+            try self.execBind("UPDATE tasks SET project_id = ?2 WHERE id = ?1", .{ id, val });
+        }
+        if (completed_by_agent_id) |val| {
+            try self.execBind("UPDATE tasks SET completed_by_agent_id = ?2 WHERE id = ?1", .{ id, val });
         }
     }
 
@@ -520,12 +834,13 @@ pub const Db = struct {
 
     pub fn listTasks(self: *Db, allocator: Allocator, space_id: []const u8, parent_task_id: ?[]const u8) ![]TaskRow {
         var stmt: ?*c.sqlite3_stmt = null;
+        const select_cols = "id, space_id, parent_task_id, title, description, status, priority, queue_status, queued_at, dispatched_at, completed_at, assigned_agent_id, node_id, sort_order, created_at, identifier, due_date, labels, estimate, completed_by_agent_id, project_id";
         if (parent_task_id) |pid| {
-            if (c.sqlite3_prepare_v2(self.handle, "SELECT id, space_id, parent_task_id, title, description, status, priority, queue_status, queued_at, dispatched_at, completed_at, assigned_agent_id, node_id, sort_order, created_at FROM tasks WHERE space_id = ?1 AND parent_task_id = ?2 ORDER BY sort_order", -1, &stmt, null) != c.SQLITE_OK) return &.{};
+            if (c.sqlite3_prepare_v2(self.handle, "SELECT " ++ select_cols ++ " FROM tasks WHERE space_id = ?1 AND parent_task_id = ?2 ORDER BY sort_order", -1, &stmt, null) != c.SQLITE_OK) return &.{};
             bindText(stmt.?, 1, space_id);
             bindText(stmt.?, 2, pid);
         } else {
-            if (c.sqlite3_prepare_v2(self.handle, "SELECT id, space_id, parent_task_id, title, description, status, priority, queue_status, queued_at, dispatched_at, completed_at, assigned_agent_id, node_id, sort_order, created_at FROM tasks WHERE space_id = ?1 AND parent_task_id IS NULL ORDER BY sort_order", -1, &stmt, null) != c.SQLITE_OK) return &.{};
+            if (c.sqlite3_prepare_v2(self.handle, "SELECT " ++ select_cols ++ " FROM tasks WHERE space_id = ?1 AND parent_task_id IS NULL ORDER BY sort_order", -1, &stmt, null) != c.SQLITE_OK) return &.{};
             bindText(stmt.?, 1, space_id);
         }
         defer _ = c.sqlite3_finalize(stmt);
@@ -548,6 +863,12 @@ pub const Db = struct {
                 .node_id = dupeColumnTextOpt(allocator, stmt.?, 12),
                 .sort_order = c.sqlite3_column_int(stmt.?, 13),
                 .created_at = c.sqlite3_column_int64(stmt.?, 14),
+                .identifier = dupeColumnTextOpt(allocator, stmt.?, 15),
+                .due_date = dupeColumnTextOpt(allocator, stmt.?, 16),
+                .labels = dupeColumnTextOpt(allocator, stmt.?, 17),
+                .estimate = if (c.sqlite3_column_type(stmt.?, 18) != c.SQLITE_NULL) c.sqlite3_column_int(stmt.?, 18) else null,
+                .completed_by_agent_id = dupeColumnTextOpt(allocator, stmt.?, 19),
+                .project_id = dupeColumnTextOpt(allocator, stmt.?, 20),
             };
             list.append(allocator, row) catch break;
         }
@@ -562,9 +883,29 @@ pub const Db = struct {
     }
 
     pub fn assignTaskToAgent(self: *Db, task_id: []const u8, agent_id: []const u8) !void {
+        var stmt: ?*c.sqlite3_stmt = null;
+        if (c.sqlite3_prepare_v2(self.handle, "SELECT assigned_agent_id FROM tasks WHERE id = ?1", -1, &stmt, null) != c.SQLITE_OK) return;
+        defer _ = c.sqlite3_finalize(stmt);
+        bindText(stmt.?, 1, task_id);
+
+        var previous_agent_id: ?[]const u8 = null;
+        if (c.sqlite3_step(stmt.?) == c.SQLITE_ROW) {
+            previous_agent_id = dupeColumnTextOpt(self.allocator, stmt.?, 0);
+        }
+        defer if (previous_agent_id) |value| self.allocator.free(value);
+
         // Begin transaction
         _ = c.sqlite3_exec(self.handle, "BEGIN TRANSACTION", null, null, null);
         errdefer _ = c.sqlite3_exec(self.handle, "ROLLBACK", null, null, null);
+
+        if (previous_agent_id) |previous| {
+            if (!std.mem.eql(u8, previous, agent_id)) {
+                try self.execBind(
+                    "UPDATE agents SET assigned_task_id = NULL, status = 'idle', session_id = NULL, started_at = NULL WHERE id = ?1",
+                    .{previous},
+                );
+            }
+        }
 
         // Update task
         try self.execBind(
@@ -574,7 +915,7 @@ pub const Db = struct {
 
         // Update agent
         try self.execBind(
-            "UPDATE agents SET assigned_task_id = ?2, status = 'running', started_at = strftime('%s','now') WHERE id = ?1",
+            "UPDATE agents SET assigned_task_id = ?2, status = 'running', session_id = NULL, started_at = strftime('%s','now') WHERE id = ?1",
             .{ agent_id, task_id },
         );
 
@@ -600,7 +941,7 @@ pub const Db = struct {
 
         // Clear task assignment
         try self.execBind(
-            "UPDATE tasks SET assigned_agent_id = NULL, queue_status = 'completed', completed_at = strftime('%s','now'), status = 'done' WHERE id = ?1",
+            "UPDATE tasks SET assigned_agent_id = NULL, queue_status = 'none', queued_at = NULL, dispatched_at = NULL, completed_at = NULL, status = 'todo' WHERE id = ?1",
             .{task_id},
         );
 
@@ -687,7 +1028,7 @@ pub const Db = struct {
         var stmt: ?*c.sqlite3_stmt = null;
         if (c.sqlite3_prepare_v2(
             self.handle,
-            "SELECT id FROM tasks WHERE space_id = ?1 AND queue_status = 'queued' AND assigned_agent_id IS NULL ORDER BY CASE priority WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END, COALESCE(queued_at, created_at), sort_order, created_at",
+            "SELECT id FROM tasks WHERE space_id = ?1 AND queue_status = 'queued' AND assigned_agent_id IS NULL ORDER BY CASE priority WHEN 'urgent' THEN -1 WHEN 'high' THEN 0 WHEN 'medium' THEN 1 WHEN 'low' THEN 2 WHEN 'none' THEN 3 ELSE 4 END, COALESCE(queued_at, created_at), sort_order, created_at",
             -1,
             &stmt,
             null,
@@ -842,6 +1183,39 @@ pub const Db = struct {
         };
     }
 
+    pub fn getAgentLaunchContext(self: *Db, allocator: Allocator, task_id: []const u8) !?AgentLaunchContext {
+        var stmt: ?*c.sqlite3_stmt = null;
+        if (c.sqlite3_prepare_v2(
+            self.handle,
+            "SELECT t.id, t.space_id, s.directory_path, t.title, t.description, t.identifier, t.priority, a.id, a.provider_id, a.provider_name, a.prompt " ++
+                "FROM tasks t " ++
+                "JOIN spaces s ON s.id = t.space_id " ++
+                "JOIN agents a ON a.id = t.assigned_agent_id " ++
+                "WHERE t.id = ?1 LIMIT 1",
+            -1,
+            &stmt,
+            null,
+        ) != c.SQLITE_OK) return null;
+        defer _ = c.sqlite3_finalize(stmt);
+        bindText(stmt.?, 1, task_id);
+
+        if (c.sqlite3_step(stmt.?) != c.SQLITE_ROW) return null;
+
+        return AgentLaunchContext{
+            .task_id = try dupeColumnText(allocator, stmt.?, 0),
+            .space_id = try dupeColumnText(allocator, stmt.?, 1),
+            .space_directory_path = try dupeColumnText(allocator, stmt.?, 2),
+            .task_title = try dupeColumnText(allocator, stmt.?, 3),
+            .task_description = try dupeColumnText(allocator, stmt.?, 4),
+            .task_identifier = dupeColumnTextOpt(allocator, stmt.?, 5),
+            .task_priority = try dupeColumnText(allocator, stmt.?, 6),
+            .agent_id = try dupeColumnText(allocator, stmt.?, 7),
+            .provider_id = try dupeColumnText(allocator, stmt.?, 8),
+            .provider_name = try dupeColumnText(allocator, stmt.?, 9),
+            .agent_prompt = dupeColumnTextOpt(allocator, stmt.?, 10),
+        };
+    }
+
     pub fn reconcileSlotDispatchState(self: *Db, allocator: Allocator, space_id: []const u8, requeue: bool) !void {
         const tasks_in_space = try self.listTasks(allocator, space_id, null);
         defer freeTaskRows(allocator, tasks_in_space);
@@ -936,6 +1310,208 @@ pub const Db = struct {
         if (c.sqlite3_step(stmt.?) != c.SQLITE_DONE) {
             return error.SqliteStepFailed;
         }
+    }
+
+    // -- Comment CRUD --
+
+    pub fn createComment(self: *Db, id: []const u8, task_id: []const u8, author_type: []const u8, author_id: []const u8, content: []const u8, parent_comment_id: ?[]const u8) !void {
+        if (parent_comment_id) |pid| {
+            try self.execBind(
+                "INSERT INTO comments (id, task_id, author_type, author_id, content, parent_comment_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                .{ id, task_id, author_type, author_id, content, pid },
+            );
+        } else {
+            try self.execBind(
+                "INSERT INTO comments (id, task_id, author_type, author_id, content) VALUES (?1, ?2, ?3, ?4, ?5)",
+                .{ id, task_id, author_type, author_id, content },
+            );
+        }
+    }
+
+    pub fn listComments(self: *Db, allocator: Allocator, task_id: []const u8) ![]CommentRow {
+        var stmt: ?*c.sqlite3_stmt = null;
+        if (c.sqlite3_prepare_v2(self.handle, "SELECT id, task_id, author_type, author_id, content, parent_comment_id, created_at, updated_at FROM comments WHERE task_id = ?1 ORDER BY created_at ASC", -1, &stmt, null) != c.SQLITE_OK) return &.{};
+        defer _ = c.sqlite3_finalize(stmt);
+
+        bindText(stmt.?, 1, task_id);
+
+        var list: std.ArrayList(CommentRow) = .empty;
+        while (c.sqlite3_step(stmt.?) == c.SQLITE_ROW) {
+            const row = CommentRow{
+                .id = dupeColumnText(allocator, stmt.?, 0) catch continue,
+                .task_id = dupeColumnText(allocator, stmt.?, 1) catch continue,
+                .author_type = dupeColumnText(allocator, stmt.?, 2) catch continue,
+                .author_id = dupeColumnText(allocator, stmt.?, 3) catch continue,
+                .content = dupeColumnText(allocator, stmt.?, 4) catch continue,
+                .parent_comment_id = dupeColumnTextOpt(allocator, stmt.?, 5),
+                .created_at = c.sqlite3_column_int64(stmt.?, 6),
+                .updated_at = c.sqlite3_column_int64(stmt.?, 7),
+            };
+            list.append(allocator, row) catch break;
+        }
+        return list.toOwnedSlice(allocator) catch &.{};
+    }
+
+    pub fn updateComment(self: *Db, id: []const u8, content: []const u8) !void {
+        try self.execBind(
+            "UPDATE comments SET content = ?2, updated_at = strftime('%s','now') WHERE id = ?1",
+            .{ id, content },
+        );
+    }
+
+    pub fn deleteComment(self: *Db, id: []const u8) !void {
+        try self.execBind("DELETE FROM comments WHERE id = ?1", .{id});
+    }
+
+    // -- Task helpers --
+
+    pub fn getTaskTitle(self: *Db, allocator: Allocator, task_id: []const u8) !?[]u8 {
+        var stmt: ?*c.sqlite3_stmt = null;
+        if (c.sqlite3_prepare_v2(self.handle, "SELECT title FROM tasks WHERE id = ?1", -1, &stmt, null) != c.SQLITE_OK) return null;
+        defer _ = c.sqlite3_finalize(stmt);
+        bindText(stmt.?, 1, task_id);
+        if (c.sqlite3_step(stmt.?) != c.SQLITE_ROW) return null;
+        const ptr = c.sqlite3_column_text(stmt.?, 0);
+        const len: usize = @intCast(c.sqlite3_column_bytes(stmt.?, 0));
+        if (ptr == null or len == 0) return null;
+        const result = try allocator.alloc(u8, len);
+        @memcpy(result, ptr[0..len]);
+        return result;
+    }
+
+    // -- Project CRUD --
+
+    pub fn createProject(self: *Db, id: []const u8, space_id: []const u8, name: []const u8, description: []const u8) !void {
+        try self.execBind(
+            "INSERT INTO projects (id, space_id, name, description) VALUES (?1, ?2, ?3, ?4)",
+            .{ id, space_id, name, description },
+        );
+    }
+
+    pub fn listProjects(self: *Db, allocator: Allocator, space_id: []const u8) ![]ProjectRow {
+        var stmt: ?*c.sqlite3_stmt = null;
+        if (c.sqlite3_prepare_v2(self.handle, "SELECT id, space_id, name, description, status, created_at FROM projects WHERE space_id = ?1 ORDER BY created_at", -1, &stmt, null) != c.SQLITE_OK) return &.{};
+        defer _ = c.sqlite3_finalize(stmt);
+        bindText(stmt.?, 1, space_id);
+
+        var list: std.ArrayList(ProjectRow) = .empty;
+        while (c.sqlite3_step(stmt.?) == c.SQLITE_ROW) {
+            list.append(allocator, .{
+                .id = dupeColumnText(allocator, stmt.?, 0) catch continue,
+                .space_id = dupeColumnText(allocator, stmt.?, 1) catch continue,
+                .name = dupeColumnText(allocator, stmt.?, 2) catch continue,
+                .description = dupeColumnText(allocator, stmt.?, 3) catch continue,
+                .status = dupeColumnText(allocator, stmt.?, 4) catch continue,
+                .created_at = c.sqlite3_column_int64(stmt.?, 5),
+            }) catch break;
+        }
+        return list.toOwnedSlice(allocator) catch &.{};
+    }
+
+    pub fn updateProject(self: *Db, id: []const u8, name: ?[]const u8, description: ?[]const u8, status: ?[]const u8) !void {
+        if (name) |v| try self.execBind("UPDATE projects SET name = ?2 WHERE id = ?1", .{ id, v });
+        if (description) |v| try self.execBind("UPDATE projects SET description = ?2 WHERE id = ?1", .{ id, v });
+        if (status) |v| try self.execBind("UPDATE projects SET status = ?2 WHERE id = ?1", .{ id, v });
+    }
+
+    pub fn deleteProject(self: *Db, id: []const u8) !void {
+        try self.execBind("DELETE FROM projects WHERE id = ?1", .{id});
+    }
+
+    // -- Inbox CRUD --
+
+    pub fn createInboxItem(self: *Db, id: []const u8, space_id: []const u8, item_type: []const u8, item_id: []const u8, message: []const u8) !void {
+        try self.execBind(
+            "INSERT INTO inbox_items (id, space_id, item_type, item_id, message) VALUES (?1, ?2, ?3, ?4, ?5)",
+            .{ id, space_id, item_type, item_id, message },
+        );
+    }
+
+    pub fn listInboxItems(self: *Db, allocator: Allocator, space_id: []const u8) ![]InboxItemRow {
+        var stmt: ?*c.sqlite3_stmt = null;
+        if (c.sqlite3_prepare_v2(self.handle, "SELECT id, space_id, item_type, item_id, message, read, created_at FROM inbox_items WHERE space_id = ?1 ORDER BY created_at DESC", -1, &stmt, null) != c.SQLITE_OK) return &.{};
+        defer _ = c.sqlite3_finalize(stmt);
+        bindText(stmt.?, 1, space_id);
+
+        var list: std.ArrayList(InboxItemRow) = .empty;
+        while (c.sqlite3_step(stmt.?) == c.SQLITE_ROW) {
+            list.append(allocator, .{
+                .id = dupeColumnText(allocator, stmt.?, 0) catch continue,
+                .space_id = dupeColumnText(allocator, stmt.?, 1) catch continue,
+                .item_type = dupeColumnText(allocator, stmt.?, 2) catch continue,
+                .item_id = dupeColumnText(allocator, stmt.?, 3) catch continue,
+                .message = dupeColumnText(allocator, stmt.?, 4) catch continue,
+                .read = c.sqlite3_column_int(stmt.?, 5) != 0,
+                .created_at = c.sqlite3_column_int64(stmt.?, 6),
+            }) catch break;
+        }
+        return list.toOwnedSlice(allocator) catch &.{};
+    }
+
+    pub fn markInboxItemRead(self: *Db, id: []const u8) !void {
+        try self.execBind("UPDATE inbox_items SET read = 1 WHERE id = ?1", .{id});
+    }
+
+    pub fn markAllInboxItemsRead(self: *Db, space_id: []const u8) !void {
+        try self.execBind("UPDATE inbox_items SET read = 1 WHERE space_id = ?1", .{space_id});
+    }
+
+    pub fn unreadInboxCount(self: *Db, space_id: []const u8) i64 {
+        var stmt: ?*c.sqlite3_stmt = null;
+        if (c.sqlite3_prepare_v2(self.handle, "SELECT COUNT(*) FROM inbox_items WHERE space_id = ?1 AND read = 0", -1, &stmt, null) != c.SQLITE_OK) return 0;
+        defer _ = c.sqlite3_finalize(stmt);
+        bindText(stmt.?, 1, space_id);
+        if (c.sqlite3_step(stmt.?) == c.SQLITE_ROW) return c.sqlite3_column_int64(stmt.?, 0);
+        return 0;
+    }
+
+    // -- Autopilot CRUD --
+
+    pub fn createAutopilot(self: *Db, id: []const u8, space_id: []const u8, name: []const u8, trigger_config: []const u8, action_config: []const u8) !void {
+        try self.execBind(
+            "INSERT INTO autopilots (id, space_id, name, trigger_config, action_config) VALUES (?1, ?2, ?3, ?4, ?5)",
+            .{ id, space_id, name, trigger_config, action_config },
+        );
+    }
+
+    pub fn listAutopilots(self: *Db, allocator: Allocator, space_id: []const u8) ![]AutopilotRow {
+        var stmt: ?*c.sqlite3_stmt = null;
+        if (c.sqlite3_prepare_v2(self.handle, "SELECT id, space_id, name, trigger_config, action_config, enabled, created_at FROM autopilots WHERE space_id = ?1 ORDER BY created_at", -1, &stmt, null) != c.SQLITE_OK) return &.{};
+        defer _ = c.sqlite3_finalize(stmt);
+        bindText(stmt.?, 1, space_id);
+
+        var list: std.ArrayList(AutopilotRow) = .empty;
+        while (c.sqlite3_step(stmt.?) == c.SQLITE_ROW) {
+            list.append(allocator, .{
+                .id = dupeColumnText(allocator, stmt.?, 0) catch continue,
+                .space_id = dupeColumnText(allocator, stmt.?, 1) catch continue,
+                .name = dupeColumnText(allocator, stmt.?, 2) catch continue,
+                .trigger_config = dupeColumnText(allocator, stmt.?, 3) catch continue,
+                .action_config = dupeColumnText(allocator, stmt.?, 4) catch continue,
+                .enabled = c.sqlite3_column_int(stmt.?, 5) != 0,
+                .created_at = c.sqlite3_column_int64(stmt.?, 6),
+            }) catch break;
+        }
+        return list.toOwnedSlice(allocator) catch &.{};
+    }
+
+    pub fn updateAutopilot(self: *Db, id: []const u8, name: ?[]const u8, trigger_config: ?[]const u8, action_config: ?[]const u8) !void {
+        if (name) |v| try self.execBind("UPDATE autopilots SET name = ?2 WHERE id = ?1", .{ id, v });
+        if (trigger_config) |v| try self.execBind("UPDATE autopilots SET trigger_config = ?2 WHERE id = ?1", .{ id, v });
+        if (action_config) |v| try self.execBind("UPDATE autopilots SET action_config = ?2 WHERE id = ?1", .{ id, v });
+    }
+
+    pub fn setAutopilotEnabled(self: *Db, id: []const u8, enabled: bool) !void {
+        var stmt: ?*c.sqlite3_stmt = null;
+        if (c.sqlite3_prepare_v2(self.handle, "UPDATE autopilots SET enabled = ?2 WHERE id = ?1", -1, &stmt, null) != c.SQLITE_OK) return error.SqlitePrepareFailed;
+        defer _ = c.sqlite3_finalize(stmt);
+        bindText(stmt.?, 1, id);
+        _ = c.sqlite3_bind_int(stmt.?, 2, if (enabled) @as(c_int, 1) else @as(c_int, 0));
+        if (c.sqlite3_step(stmt.?) != c.SQLITE_DONE) return error.SqliteStepFailed;
+    }
+
+    pub fn deleteAutopilot(self: *Db, id: []const u8) !void {
+        try self.execBind("DELETE FROM autopilots WHERE id = ?1", .{id});
     }
 
     // -- Helpers --
@@ -1049,6 +1625,23 @@ pub const TaskRow = struct {
     node_id: ?[]const u8,
     sort_order: i32,
     created_at: i64,
+    identifier: ?[]const u8,
+    due_date: ?[]const u8,
+    labels: ?[]const u8,
+    estimate: ?i32,
+    completed_by_agent_id: ?[]const u8,
+    project_id: ?[]const u8,
+};
+
+pub const CommentRow = struct {
+    id: []const u8,
+    task_id: []const u8,
+    author_type: []const u8,
+    author_id: []const u8,
+    content: []const u8,
+    parent_comment_id: ?[]const u8,
+    created_at: i64,
+    updated_at: i64,
 };
 
 pub const AgentRow = struct {
@@ -1064,6 +1657,19 @@ pub const AgentRow = struct {
     node_id: ?[]const u8,
     sort_order: i32,
     created_at: i64,
+};
+
+pub const TaskRunRow = struct {
+    id: []const u8,
+    task_id: []const u8,
+    agent_id: ?[]const u8,
+    provider_id: []const u8,
+    provider_name: []const u8,
+    session_id: ?[]const u8,
+    status: []const u8,
+    transcript: []const u8,
+    started_at: i64,
+    ended_at: ?i64,
 };
 
 pub const DispatchAssignment = struct {
@@ -1084,11 +1690,54 @@ pub const TaskExecutionBinding = struct {
     session_id: ?[]const u8,
 };
 
+pub const AgentLaunchContext = struct {
+    task_id: []const u8,
+    space_id: []const u8,
+    space_directory_path: []const u8,
+    task_title: []const u8,
+    task_description: []const u8,
+    task_identifier: ?[]const u8,
+    task_priority: []const u8,
+    agent_id: []const u8,
+    provider_id: []const u8,
+    provider_name: []const u8,
+    agent_prompt: ?[]const u8,
+};
+
 pub const SchedulerSettingsRow = struct {
     workspace_id: []const u8,
     concurrency: i32,
     auto_dispatch: bool,
     default_agent_id: []const u8,
+};
+
+pub const ProjectRow = struct {
+    id: []const u8,
+    space_id: []const u8,
+    name: []const u8,
+    description: []const u8,
+    status: []const u8,
+    created_at: i64,
+};
+
+pub const InboxItemRow = struct {
+    id: []const u8,
+    space_id: []const u8,
+    item_type: []const u8,
+    item_id: []const u8,
+    message: []const u8,
+    read: bool,
+    created_at: i64,
+};
+
+pub const AutopilotRow = struct {
+    id: []const u8,
+    space_id: []const u8,
+    name: []const u8,
+    trigger_config: []const u8,
+    action_config: []const u8,
+    enabled: bool,
+    created_at: i64,
 };
 
 // -- Low-level helpers --
@@ -1241,6 +1890,11 @@ fn freeTaskRows(allocator: Allocator, rows: []TaskRow) void {
         allocator.free(row.queue_status);
         if (row.assigned_agent_id) |value| allocator.free(value);
         if (row.node_id) |value| allocator.free(value);
+        if (row.identifier) |value| allocator.free(value);
+        if (row.due_date) |value| allocator.free(value);
+        if (row.labels) |value| allocator.free(value);
+        if (row.completed_by_agent_id) |value| allocator.free(value);
+        if (row.project_id) |value| allocator.free(value);
     }
     allocator.free(rows);
 }
@@ -1260,10 +1914,36 @@ fn freeAgentRows(allocator: Allocator, rows: []AgentRow) void {
     allocator.free(rows);
 }
 
+pub fn freeTaskRunRows(allocator: Allocator, rows: []TaskRunRow) void {
+    for (rows) |row| {
+        allocator.free(row.id);
+        allocator.free(row.task_id);
+        if (row.agent_id) |value| allocator.free(value);
+        allocator.free(row.provider_id);
+        allocator.free(row.provider_name);
+        if (row.session_id) |value| allocator.free(value);
+        allocator.free(row.status);
+        allocator.free(row.transcript);
+    }
+    allocator.free(rows);
+}
+
 pub fn freeDispatchAssignments(allocator: Allocator, rows: []DispatchAssignment) void {
     for (rows) |row| {
         allocator.free(row.task_id);
         allocator.free(row.agent_id);
+    }
+    allocator.free(rows);
+}
+
+pub fn freeCommentRows(allocator: Allocator, rows: []CommentRow) void {
+    for (rows) |row| {
+        allocator.free(row.id);
+        allocator.free(row.task_id);
+        allocator.free(row.author_type);
+        allocator.free(row.author_id);
+        allocator.free(row.content);
+        if (row.parent_comment_id) |value| allocator.free(value);
     }
     allocator.free(rows);
 }
@@ -1285,6 +1965,20 @@ pub fn freeTaskExecutionBinding(allocator: Allocator, binding: TaskExecutionBind
     allocator.free(binding.space_id);
     if (binding.assigned_agent_id) |value| allocator.free(value);
     if (binding.session_id) |value| allocator.free(value);
+}
+
+pub fn freeAgentLaunchContext(allocator: Allocator, context: AgentLaunchContext) void {
+    allocator.free(context.task_id);
+    allocator.free(context.space_id);
+    allocator.free(context.space_directory_path);
+    allocator.free(context.task_title);
+    allocator.free(context.task_description);
+    if (context.task_identifier) |value| allocator.free(value);
+    allocator.free(context.task_priority);
+    allocator.free(context.agent_id);
+    allocator.free(context.provider_id);
+    allocator.free(context.provider_name);
+    if (context.agent_prompt) |value| allocator.free(value);
 }
 
 test "Db persists workspaces, spaces, and scheduler settings across reopen" {
@@ -1362,6 +2056,70 @@ test "Db persists task queue assignment and agent linkage" {
     try std.testing.expect(agents_list[0].started_at != null);
 }
 
+test "Db task CRUD preserves metadata and nested task linkage" {
+    const allocator = std.testing.allocator;
+    const db_path = try uniqueTestDbPath(allocator);
+    defer allocator.free(db_path);
+    defer std.fs.cwd().deleteFile(std.mem.sliceTo(db_path, 0)) catch {};
+
+    var db = try Db.openPath(allocator, db_path);
+    defer db.close();
+
+    try db.createWorkspace("ws-1", "Workspace", "/repo");
+    try db.createSpace("space-1", "ws-1", "Default", "/repo/project");
+    try db.createAgent("agent-1", "space-1", "claude", "Claude Code");
+    try db.createTask("task-parent", "space-1", "Parent", "Parent description", "medium", null);
+    try db.createTask("task-child", "space-1", "Child", "Child description", "low", "task-parent");
+    try db.updateTask(
+        "task-parent",
+        "Parent v2",
+        "Updated description",
+        "in_review",
+        "high",
+        "queued",
+        "WOR-5",
+        "2026-04-30",
+        "[\"frontend\",\"polish\"]",
+        8,
+        "project-1",
+        "agent-1",
+    );
+
+    const top_level_tasks = try db.listTasks(allocator, "space-1", null);
+    defer freeTaskRows(allocator, top_level_tasks);
+    try std.testing.expectEqual(@as(usize, 1), top_level_tasks.len);
+    try std.testing.expectEqualStrings("Parent v2", top_level_tasks[0].title);
+    try std.testing.expectEqualStrings("Updated description", top_level_tasks[0].description);
+    try std.testing.expectEqualStrings("in_review", top_level_tasks[0].status);
+    try std.testing.expectEqualStrings("high", top_level_tasks[0].priority);
+    try std.testing.expectEqualStrings("queued", top_level_tasks[0].queue_status);
+    try std.testing.expectEqualStrings("WOR-5", top_level_tasks[0].identifier.?);
+    try std.testing.expectEqualStrings("2026-04-30", top_level_tasks[0].due_date.?);
+    try std.testing.expectEqualStrings("[\"frontend\",\"polish\"]", top_level_tasks[0].labels.?);
+    try std.testing.expectEqual(@as(i32, 8), top_level_tasks[0].estimate.?);
+    try std.testing.expectEqualStrings("project-1", top_level_tasks[0].project_id.?);
+    try std.testing.expectEqualStrings("agent-1", top_level_tasks[0].completed_by_agent_id.?);
+
+    const child_tasks = try db.listTasks(allocator, "space-1", "task-parent");
+    defer freeTaskRows(allocator, child_tasks);
+    try std.testing.expectEqual(@as(usize, 1), child_tasks.len);
+    try std.testing.expectEqualStrings("task-parent", child_tasks[0].parent_task_id.?);
+
+    const space_dir = (try db.getSpaceDirectoryPath(allocator, "space-1")).?;
+    defer allocator.free(space_dir);
+    try std.testing.expectEqualStrings("/repo/project", space_dir);
+
+    try db.deleteTask("task-parent");
+
+    const remaining_top_level = try db.listTasks(allocator, "space-1", null);
+    defer freeTaskRows(allocator, remaining_top_level);
+    try std.testing.expectEqual(@as(usize, 0), remaining_top_level.len);
+
+    const remaining_children = try db.listTasks(allocator, "space-1", "task-parent");
+    defer freeTaskRows(allocator, remaining_children);
+    try std.testing.expectEqual(@as(usize, 0), remaining_children.len);
+}
+
 test "Db dispatches queued tasks to idle slot agents by priority" {
     const allocator = std.testing.allocator;
     const db_path = try uniqueTestDbPath(allocator);
@@ -1402,4 +2160,263 @@ test "Db dispatches queued tasks to idle slot agents by priority" {
     }
     try std.testing.expectEqualStrings("slot-2", low_task_agent_id.?);
     try std.testing.expectEqualStrings("slot-1", high_task_agent_id.?);
+}
+
+test "Db task dispatch lifecycle handles assign, reassign, unassign, reset, and delete" {
+    const allocator = std.testing.allocator;
+    const db_path = try uniqueTestDbPath(allocator);
+    defer allocator.free(db_path);
+    defer std.fs.cwd().deleteFile(std.mem.sliceTo(db_path, 0)) catch {};
+
+    var db = try Db.openPath(allocator, db_path);
+    defer db.close();
+
+    try db.createWorkspace("ws-1", "Workspace", "/repo");
+    try db.createSpace("space-1", "ws-1", "Default", "/repo");
+    try db.createTask("task-1", "space-1", "Terminal task", "Needs a shell", "high", null);
+    try db.createAgent("slot-1", "space-1", "claude", "Claude Code");
+    try db.createAgent("slot-2", "space-1", "claude", "Claude Code");
+    try db.enqueueTask("task-1");
+    try db.assignTaskToAgent("task-1", "slot-1");
+
+    const agents_after_assign = try db.listAgents(allocator, "space-1", null);
+    defer freeAgentRows(allocator, agents_after_assign);
+    try std.testing.expect(agents_after_assign[0].session_id == null);
+
+    try db.updateAgent("slot-1", null, "session-1", "Run tests", false, false);
+
+    const binding = (try db.getTaskExecutionBinding(allocator, "task-1")).?;
+    defer freeTaskExecutionBinding(allocator, binding);
+    try std.testing.expectEqualStrings("space-1", binding.space_id);
+    try std.testing.expectEqualStrings("slot-1", binding.assigned_agent_id.?);
+    try std.testing.expectEqualStrings("session-1", binding.session_id.?);
+
+    try db.assignTaskToAgent("task-1", "slot-2");
+
+    const reassigned_tasks = try db.listTasks(allocator, "space-1", null);
+    defer freeTaskRows(allocator, reassigned_tasks);
+    try std.testing.expectEqualStrings("slot-2", reassigned_tasks[0].assigned_agent_id.?);
+    try std.testing.expectEqualStrings("in_progress", reassigned_tasks[0].status);
+    try std.testing.expectEqualStrings("dispatched", reassigned_tasks[0].queue_status);
+
+    const reassigned_agents = try db.listAgents(allocator, "space-1", null);
+    defer freeAgentRows(allocator, reassigned_agents);
+    var slot_1_idle = false;
+    var slot_2_running = false;
+    for (reassigned_agents) |agent| {
+        if (std.mem.eql(u8, agent.id, "slot-1")) {
+            slot_1_idle = std.mem.eql(u8, agent.status, "idle") and agent.assigned_task_id == null and agent.session_id == null;
+        }
+        if (std.mem.eql(u8, agent.id, "slot-2")) {
+            slot_2_running = std.mem.eql(u8, agent.status, "running") and agent.assigned_task_id != null and std.mem.eql(u8, agent.assigned_task_id.?, "task-1");
+        }
+    }
+    try std.testing.expect(slot_1_idle);
+    try std.testing.expect(slot_2_running);
+
+    try db.unassignTask("task-1");
+
+    const completed_tasks = try db.listTasks(allocator, "space-1", null);
+    defer freeTaskRows(allocator, completed_tasks);
+    try std.testing.expectEqualStrings("todo", completed_tasks[0].status);
+    try std.testing.expectEqualStrings("none", completed_tasks[0].queue_status);
+    try std.testing.expect(completed_tasks[0].completed_at == null);
+    try std.testing.expect(completed_tasks[0].assigned_agent_id == null);
+
+    const idle_agents = try db.listAgents(allocator, "space-1", null);
+    defer freeAgentRows(allocator, idle_agents);
+    for (idle_agents) |agent| {
+        try std.testing.expectEqualStrings("idle", agent.status);
+        try std.testing.expect(agent.session_id == null);
+        try std.testing.expect(agent.assigned_task_id == null);
+    }
+
+    try db.enqueueTask("task-1");
+    try db.assignTaskToAgent("task-1", "slot-1");
+    try db.resetTaskDispatch("task-1", true);
+
+    const requeued_tasks = try db.listTasks(allocator, "space-1", null);
+    defer freeTaskRows(allocator, requeued_tasks);
+    try std.testing.expectEqualStrings("todo", requeued_tasks[0].status);
+    try std.testing.expectEqualStrings("queued", requeued_tasks[0].queue_status);
+    try std.testing.expect(requeued_tasks[0].assigned_agent_id == null);
+
+    try db.assignTaskToAgent("task-1", "slot-1");
+    try db.deleteTask("task-1");
+
+    const no_tasks = try db.listTasks(allocator, "space-1", null);
+    defer freeTaskRows(allocator, no_tasks);
+    try std.testing.expectEqual(@as(usize, 0), no_tasks.len);
+
+    const released_agents = try db.listAgents(allocator, "space-1", null);
+    defer freeAgentRows(allocator, released_agents);
+    try std.testing.expectEqualStrings("idle", released_agents[0].status);
+    try std.testing.expect(released_agents[0].assigned_task_id == null);
+    try std.testing.expect(released_agents[0].session_id == null);
+}
+
+test "Db exposes the assigned agent launch context for task execution" {
+    const allocator = std.testing.allocator;
+    const db_path = try uniqueTestDbPath(allocator);
+    defer allocator.free(db_path);
+    defer std.fs.cwd().deleteFile(std.mem.sliceTo(db_path, 0)) catch {};
+
+    var db = try Db.openPath(allocator, db_path);
+    defer db.close();
+
+    try db.createWorkspace("ws-1", "Workspace", "/repo");
+    try db.createSpace("space-1", "ws-1", "Default", "/repo/project");
+    try db.createTask("task-1", "space-1", "Ship runtime wiring", "Make assignment launch the actual CLI agent.", "high", null);
+    try db.updateTask("task-1", null, null, null, null, null, "NXS-101", null, null, null, null, null);
+    try db.createAgent("agent-1", "space-1", "claude", "Claude Code");
+    try db.updateAgent("agent-1", null, null, "Keep output concise and actionable.", false, false);
+    try db.assignTaskToAgent("task-1", "agent-1");
+
+    const context = (try db.getAgentLaunchContext(allocator, "task-1")).?;
+    defer freeAgentLaunchContext(allocator, context);
+
+    try std.testing.expectEqualStrings("task-1", context.task_id);
+    try std.testing.expectEqualStrings("space-1", context.space_id);
+    try std.testing.expectEqualStrings("/repo/project", context.space_directory_path);
+    try std.testing.expectEqualStrings("Ship runtime wiring", context.task_title);
+    try std.testing.expectEqualStrings("Make assignment launch the actual CLI agent.", context.task_description);
+    try std.testing.expectEqualStrings("NXS-101", context.task_identifier.?);
+    try std.testing.expectEqualStrings("high", context.task_priority);
+    try std.testing.expectEqualStrings("agent-1", context.agent_id);
+    try std.testing.expectEqualStrings("claude", context.provider_id);
+    try std.testing.expectEqualStrings("Claude Code", context.provider_name);
+    try std.testing.expectEqualStrings("Keep output concise and actionable.", context.agent_prompt.?);
+}
+
+test "Db saveScrollback overwrites the previous buffer for the same node" {
+    const allocator = std.testing.allocator;
+    const db_path = try uniqueTestDbPath(allocator);
+    defer allocator.free(db_path);
+    defer std.fs.cwd().deleteFile(std.mem.sliceTo(db_path, 0)) catch {};
+
+    var db = try Db.openPath(allocator, db_path);
+    defer db.close();
+
+    try db.createWorkspace("ws-1", "Workspace", "/repo");
+    try db.createSpace("space-1", "ws-1", "Default", "/repo");
+    try db.ensureNode("node-1", "space-1", "terminal", "Terminal");
+    try db.saveScrollback("node-1", "hello");
+    try db.saveScrollback("node-1", "world");
+
+    const loaded = (try db.loadScrollback(allocator, "node-1")).?;
+    defer allocator.free(loaded);
+
+    try std.testing.expectEqualStrings("world", loaded);
+}
+
+test "Db agent CRUD supports prompt updates and session lookup" {
+    const allocator = std.testing.allocator;
+    const db_path = try uniqueTestDbPath(allocator);
+    defer allocator.free(db_path);
+    defer std.fs.cwd().deleteFile(std.mem.sliceTo(db_path, 0)) catch {};
+
+    var db = try Db.openPath(allocator, db_path);
+    defer db.close();
+
+    try db.createWorkspace("ws-1", "Workspace", "/repo");
+    try db.createSpace("space-1", "ws-1", "Default", "/repo");
+    try db.createTask("task-1", "space-1", "Bound task", "", "medium", null);
+    try db.createAgent("slot-1", "space-1", "claude", "Claude Code");
+    try db.assignTaskToAgent("task-1", "slot-1");
+    try db.updateAgent("slot-1", "busy", "session-1", "Ship the feature", false, false);
+
+    const session_binding = (try db.getSessionAgentBinding(allocator, "session-1")).?;
+    defer freeSessionAgentBinding(allocator, session_binding);
+    try std.testing.expectEqualStrings("slot-1", session_binding.agent_id);
+    try std.testing.expectEqualStrings("space-1", session_binding.space_id);
+    try std.testing.expectEqualStrings("task-1", session_binding.assigned_task_id.?);
+    try std.testing.expect(session_binding.is_slot_agent);
+
+    const agents = try db.listAgents(allocator, "space-1", "busy");
+    defer freeAgentRows(allocator, agents);
+    try std.testing.expectEqual(@as(usize, 1), agents.len);
+    try std.testing.expectEqualStrings("Ship the feature", agents[0].prompt.?);
+    try std.testing.expectEqualStrings("session-1", agents[0].session_id.?);
+
+    try db.updateAgent("slot-1", "idle", null, null, true, true);
+    const cleared_agents = try db.listAgents(allocator, "space-1", null);
+    defer freeAgentRows(allocator, cleared_agents);
+    try std.testing.expectEqualStrings("idle", cleared_agents[0].status);
+    try std.testing.expect(cleared_agents[0].session_id == null);
+    try std.testing.expect(cleared_agents[0].assigned_task_id == null);
+
+    try db.deleteAgent("slot-1");
+    const no_agents = try db.listAgents(allocator, "space-1", null);
+    defer freeAgentRows(allocator, no_agents);
+    try std.testing.expectEqual(@as(usize, 0), no_agents.len);
+}
+
+test "Db stores task live output and execution history per session" {
+    const allocator = std.testing.allocator;
+    const db_path = try uniqueTestDbPath(allocator);
+    defer allocator.free(db_path);
+    defer std.fs.cwd().deleteFile(std.mem.sliceTo(db_path, 0)) catch {};
+
+    var db = try Db.openPath(allocator, db_path);
+    defer db.close();
+
+    try db.createWorkspace("ws-1", "Workspace", "/repo");
+    try db.createSpace("space-1", "ws-1", "Default", "/repo");
+    try db.createTask("task-1", "space-1", "Task", "", "medium", null);
+    try db.createAgent("agent-1", "space-1", "claude", "Claude Code");
+
+    try db.startTaskRun("task-1", "agent-1", "claude", "Claude Code", "session-1");
+    try db.saveTaskLiveOutput("task-1", "session-1", "thinking: inspect logs\nWrite src/main.ts\n");
+
+    const live_output = (try db.loadTaskLiveOutput(allocator, "task-1", "session-1")).?;
+    defer allocator.free(live_output);
+    try std.testing.expectEqualStrings("thinking: inspect logs\nWrite src/main.ts\n", live_output);
+
+    try db.finishTaskRun("session-1", "completed");
+
+    try std.testing.expect((try db.loadTaskLiveOutput(allocator, "task-1", "session-1")) == null);
+
+    const runs = try db.listTaskRuns(allocator, "task-1");
+    defer freeTaskRunRows(allocator, runs);
+
+    try std.testing.expectEqual(@as(usize, 1), runs.len);
+    try std.testing.expectEqualStrings("agent-1", runs[0].agent_id.?);
+    try std.testing.expectEqualStrings("claude", runs[0].provider_id);
+    try std.testing.expectEqualStrings("Claude Code", runs[0].provider_name);
+    try std.testing.expectEqualStrings("completed", runs[0].status);
+    try std.testing.expectEqualStrings("thinking: inspect logs\nWrite src/main.ts\n", runs[0].transcript);
+    try std.testing.expect(runs[0].ended_at != null);
+}
+
+test "Db enforces foreign-key cascades after enabling the pragma" {
+    const allocator = std.testing.allocator;
+    const db_path = try uniqueTestDbPath(allocator);
+    defer allocator.free(db_path);
+    defer std.fs.cwd().deleteFile(std.mem.sliceTo(db_path, 0)) catch {};
+
+    var db = try Db.openPath(allocator, db_path);
+    defer db.close();
+
+    try db.createWorkspace("ws-1", "Workspace", "/repo");
+    try db.createSpace("space-1", "ws-1", "Default", "/repo");
+    try db.ensureNode("node-1", "space-1", "terminal", "Terminal");
+    try db.createTask("task-1", "space-1", "Task", "", "medium", null);
+    try db.createAgent("agent-1", "space-1", "claude", "Claude");
+    try db.saveScrollback("node-1", "buffer");
+
+    try db.deleteWorkspace("ws-1");
+
+    const spaces = try db.listSpaces(allocator, "ws-1");
+    defer freeSpaceRows(allocator, spaces);
+    try std.testing.expectEqual(@as(usize, 0), spaces.len);
+
+    const tasks = try db.listTasks(allocator, "space-1", null);
+    defer freeTaskRows(allocator, tasks);
+    try std.testing.expectEqual(@as(usize, 0), tasks.len);
+
+    const agents = try db.listAgents(allocator, "space-1", null);
+    defer freeAgentRows(allocator, agents);
+    try std.testing.expectEqual(@as(usize, 0), agents.len);
+
+    try std.testing.expect((try db.loadScrollback(allocator, "node-1")) == null);
 }
